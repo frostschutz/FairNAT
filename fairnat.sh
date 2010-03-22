@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      v0.77 (2004-10-22 19:54)
+# Version:      v0.78 (2004-11-15 21:47)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is available (for dialup users)
@@ -38,6 +38,10 @@ FAIRNAT_CONFIG="/etc/ppp/fairnat.config"
 
 # Please note: There are much more variables, but they are defined in
 #              configure and in FAIRNAT_CONFIG.
+
+# Workaround for localized (i18ned) binaries:
+LC_ALL=C
+LANG=C
 
 # === Functions: ===
 
@@ -78,7 +82,7 @@ function configure
 
 # LAN settings:
     DEV_LAN=eth0
-    RATE_LAN=2000
+    RATE_LAN=5000
 
 # User settings:
     USERS="1 2 3"
@@ -103,6 +107,7 @@ function configure
 
 # Hacks
     MSS_CLAMPING=0
+    TTL_SET=0
     HTB_MPU=0
     HTB_OVERHEAD=0
 
@@ -251,12 +256,7 @@ function modules
 # -----------------------------------------------------------------------------
 function iptables
 {
-# 1: TTL generally set to 64, because different TTL values is a dead giveaway
-#    that there are multiple machines behind the router.
-#    Requires Kernel-TTL-Patch.
-    $BIN_IPT -t mangle -A PREROUTING -j TTL --ttl-set 64
-
-# 2: Set TOS for several stuff.
+# 1: Set TOS for several stuff.
 # TODO: Anything missing here? Tell me about it.
     $BIN_IPT -t mangle -A PREROUTING -p icmp -j TOS --set-tos Minimize-Delay
     $BIN_IPT -t mangle -A PREROUTING -p tcp --sport telnet -j TOS --set-tos Minimize-Delay
@@ -290,6 +290,13 @@ function iptables
     if [ "$MSS_CLAMPING" != "0" ];
     then
         $BIN_IPT -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS $MSS_CLAMPING
+    fi
+
+    # Set TTL to a specific value. This hack requires a kernel patch.
+    # See fairnat.config, Hacks section for details.
+    if [ "$TTL_SET" != "0" ]
+    then
+        $BIN_IPT -t mangle -A PREROUTING -j TTL --ttl-set $TTL_SET
     fi
 
 # 6: IPP2P support (experimental)
@@ -798,7 +805,7 @@ do
                 ;;
 
         version)
-                echo "Fair NAT v0.77 maintained by <Andreas.Klauer@metamorpher.de>."
+                echo "Fair NAT v0.78 maintained by <Andreas.Klauer@metamorpher.de>."
                 exit 0
                 ;;
 

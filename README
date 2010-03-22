@@ -1,6 +1,6 @@
                          Fair NAT for Linux Routers
 
-                                           last updated: 2004-10-22 19:54
+                                           last updated: 2004-11-15 22:05
 
   What's this?
 
@@ -241,13 +241,17 @@
             With this, you can enable the MSS Clamping as described in
             the LARTC Howto. Please read the appropriate section of the
             Howto for further information.
+          + TTL_SET:
+            Set the maximum TTL (Time-To-Live) for outgoing packets to a
+            specific value. This option requires a kernel patch. [8]Click
+            here for a more detailed description.
           + HTB_MPU:
             Use MPU for HTB. From the LARTC Howto on MPU: "A zero-sized
             packet does not use zero bandwidth. For ethernet, no packet
             uses less than 64 bytes. The Minimum Packet Unit determines
             the minimal token usage for a packet." This feature requires
             a patched tc binary. This binary is included in the package.
-            Go to the [8]official HTB homepage if you want to patch it
+            Go to the [9]official HTB homepage if you want to patch it
             yourself (can be troublesome). Download both HTB and MPU
             patches there.
           + HTB_OVERHEAD:
@@ -299,7 +303,7 @@
    v0.72. IPP2P provides a (more or less) reliable means to detect
    traffic of peer-to-peer (filesharing) applications. To use it, you
    first have to patch the kernel and the iptables program. You can get
-   the patches at the [9]Official IPP2P Homepage along with plenty
+   the patches at the [10]Official IPP2P Homepage along with plenty
    documentation. When that's done, you have to enable IPP2P in the Fair
    NAT configuration file, too. See the example configuration file for
    details.
@@ -313,7 +317,7 @@
    Argument' error. Another solution would be using an OLD version of the
    CONNMARK patch, but I haven't found any that worked together with
    kernel 2.4.26 so far. The patch is part of patch-o-matic-ng which you
-   can get on the [10]Official Netfilter Homepage .
+   can get on the [11]Official Netfilter Homepage .
 
    If IPP2P is enabled, Fair NAT uses it like this. If P2P traffic is
    forbidden in general, all packets recognized by IPP2P are dropped. End
@@ -342,29 +346,33 @@
    mind. Thanks.
 
    The script can be found here: (newest version recommended)
-     * [11]fairnat-0.77 Just a small feature I was asked for. If you want
-       all your users to have a lower ceil than total available
+     * [12]fairnat-0.78 (Replaced hardcoded TTL setting with the
+       configuration option TTL_SET. Workaround for localized (i18ned)
+       ifconfigs where the IP address wasn't detected. Thanks to Simon
+       for pointing these out.)
+     * [13]fairnat-0.77 (Just a small feature I was asked for. If you
+       want all your users to have a lower ceil than total available
        bandwidth, set CEIL_USER_UP and CEIL_USER_DOWN. See above for
-       documentation.
-     * [12]fairnat-0.76 (Mini-Update: Forgot to remove some debug rules
+       documentation.)
+     * [14]fairnat-0.76 (Mini-Update: Forgot to remove some debug rules
        in 0.75.)
-     * [13]fairnat-0.75 (Added HTB hacks: HTB_MPU and HTB_OVERHEAD. These
-       require a special tc patch available from the [14]HTB homepage. I
+     * [15]fairnat-0.75 (Added HTB hacks: HTB_MPU and HTB_OVERHEAD. These
+       require a special tc patch available from the [16]HTB homepage. I
        included an already patched tc-htb binary into the package.)
-     * [15]fairnat-0.74 (New config options BORROW, IPP2P_DROP_MARKED,
+     * [17]fairnat-0.74 (New config options BORROW, IPP2P_DROP_MARKED,
        CLASS_MODE, CLAMP_MSS)
-     * [16]fairnat-0.73 (Bugfix: user upload rates were totally boggled
+     * [18]fairnat-0.73 (Bugfix: user upload rates were totally boggled
        which caused traffic to be dropped instead of being shaped
        correctly.)
-     * [17]fairnat-0.72 (minor bugfixes, experimental IPP2P support)
-     * [18]fairnat-0.71 (Class numbers are now derived from user IP
+     * [19]fairnat-0.72 (minor bugfixes, experimental IPP2P support)
+     * [20]fairnat-0.71 (Class numbers are now derived from user IP
        instead of array index. This makes it much easier to read
        class-based statistics. Thanks to Udo for the suggestion.)
-     * [19]fairnat-0.70 (User grouping allows multiple IPs per user.
+     * [21]fairnat-0.70 (User grouping allows multiple IPs per user.
        Thanks to Tomasz for the suggestion. Added command line arguments
        stop, info, <config-file>)
-     * [20]fairnat-0.69
-     * [21]fairnat-0.68
+     * [22]fairnat-0.69
+     * [23]fairnat-0.68
 
    Please take the time to read the comments directly in the script,
    especially in the sample configuration file, too. I tried to add loads
@@ -380,7 +388,7 @@
    you. No, really. Give me some feedback. I'm tired of having nothing
    but spam in my mailbox. Thanks.
 
-   My mail address is: [22]Andreas.Klauer@metamorpher.de
+   My mail address is: [24]Andreas.Klauer@metamorpher.de
 
   Credits
 
@@ -412,15 +420,15 @@
 
   Other projects
 
-     * [23]tc-graph.pl : Inspired by Stef Coene's [24]show.pl , I wrote
+     * [25]tc-graph.pl : Inspired by Stef Coene's [26]show.pl , I wrote
        this script. It generates GraphViz .dot files (see
-       [25]http://www.graphviz.org for details on GraphViz) from
+       [27]http://www.graphviz.org for details on GraphViz) from
        tc-output. You can use it to create qdisc/class/filter structure
-       visualizations like [26]this one. It should be able to show any
+       visualizations like [28]this one. It should be able to show any
        qdisc/class properly, but it's still bad with filters; it's really
        hard to parse output for matches etc, so only mark filters are
        supported so far.
-     * [27]burn-dvd-image.sh : Simple script that uses a combination of
+     * [29]burn-dvd-image.sh : Simple script that uses a combination of
        growisofs, pipebuf and nice to make high speed DVD image burning
        under heavy load conditions possible. If you use growisofs, and
        experience speed breakdowns (reported writing speed is not
@@ -435,23 +443,25 @@ References
    5. http://www.metamorpher.de/files/fairnat.png
    6. http://www.metamorpher.de/files/fairnat_ipp2p.png
    7. http://www.docum.org/
-   8. http://luxik.cdi.cz/~devik/qos/htb/
-   9. http://rnvs.informatik.uni-leipzig.de/ipp2p/index_en.html
-  10. http://www.netfilter.org/
-  11. http://www.metamorpher.de/files/fairnat-0.77.tar.gz
-  12. http://www.metamorpher.de/files/fairnat-0.76.tar.gz
-  13. http://www.metamorpher.de/files/fairnat-0.75.tar.gz
-  14. http://luxik.cdi.cz/~devik/qos/htb/
-  15. http://www.metamorpher.de/files/fairnat-0.74.tar.gz
-  16. http://www.metamorpher.de/files/fairnat-0.73.tar.gz
-  17. http://www.metamorpher.de/files/fairnat-0.72.tar.gz
-  18. http://www.metamorpher.de/files/fairnat-0.71.tar.gz
-  19. http://www.metamorpher.de/files/fairnat-0.70.tar.gz
-  20. http://www.metamorpher.de/files/fairnat-0.69.tar.gz
-  21. http://www.metamorpher.de/files/fairnat-0.68.tar.gz
-  22. mailto:Andreas.Klauer@metamorpher.de
-  23. http://www.metamorpher.de/files/tc-graph.pl
-  24. http://www.docum.org/stef.coene/qos/show_qos/index.html
-  25. http://www.graphviz.org/
-  26. http://www.metamorpher.de/files/fairnat.png
-  27. http://www.metamorpher.de/files/burn-dvd-image.sh
+   8. http://iptables-tutorial.frozentux.net/iptables-tutorial.html#TTLTARGET
+   9. http://luxik.cdi.cz/~devik/qos/htb/
+  10. http://rnvs.informatik.uni-leipzig.de/ipp2p/index_en.html
+  11. http://www.netfilter.org/
+  12. http://www.metamorpher.de/files/fairnat-0.78.tar.gz
+  13. http://www.metamorpher.de/files/fairnat-0.77.tar.gz
+  14. http://www.metamorpher.de/files/fairnat-0.76.tar.gz
+  15. http://www.metamorpher.de/files/fairnat-0.75.tar.gz
+  16. http://luxik.cdi.cz/~devik/qos/htb/
+  17. http://www.metamorpher.de/files/fairnat-0.74.tar.gz
+  18. http://www.metamorpher.de/files/fairnat-0.73.tar.gz
+  19. http://www.metamorpher.de/files/fairnat-0.72.tar.gz
+  20. http://www.metamorpher.de/files/fairnat-0.71.tar.gz
+  21. http://www.metamorpher.de/files/fairnat-0.70.tar.gz
+  22. http://www.metamorpher.de/files/fairnat-0.69.tar.gz
+  23. http://www.metamorpher.de/files/fairnat-0.68.tar.gz
+  24. mailto:Andreas.Klauer@metamorpher.de
+  25. http://www.metamorpher.de/files/tc-graph.pl
+  26. http://www.docum.org/stef.coene/qos/show_qos/index.html
+  27. http://www.graphviz.org/
+  28. http://www.metamorpher.de/files/fairnat.png
+  29. http://www.metamorpher.de/files/burn-dvd-image.sh

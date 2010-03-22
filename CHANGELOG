@@ -73,3 +73,6 @@
 ---- 2004-10-22 ---- v0.77 ---- Andreas Klauer ----
   Added USER_CEIL_UP and USER_CEIL_DOWN. You can use it to set all users
   to a ceil rate lower than total available bandwidth.
+---- 2004-11-15 ---- v0.78 ---- Andreas Klauer ----
+  The IP address wasn't detected correctly for localized 'ifconfig's.
+  Made the previously hardcoded TTL setting configurable.

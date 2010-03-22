@@ -79,3 +79,9 @@
 ---- 2005-04-19 ---- v0.79 ---- Andreas Klauer ----
   You can now specify rates other than kbit (Syntax like tc)
   You can specify a ceil rate using <user>@<ceil_down>[|<ceil_up>].
+---- 2005-08-21 ---- v0.80 ---- Andreas Klauer ----
+  Added selectable FEATURES for even more customizability.
+  Moved all iptables rules into separate chains exclusive to Fair NAT
+  in order to avoid collision with already existing rules (Firewalls).
+  Added IPP2P_UDP setting to enable this recently added IPP2P feature.
+  Kernel patches are no longer included. See README.patches.

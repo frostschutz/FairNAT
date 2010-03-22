@@ -1,4 +1,0 @@
-sfq-2.4.26
-
-  This patch reduces the SFQ queue length from 128 to 16 for latency reasons.
-  Check out www.docum.org for more details.

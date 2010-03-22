@@ -1,6 +1,6 @@
                          Fair NAT for Linux Routers
 
-                                      last updated: 2005-04-19 18:44 CEST
+                                      last updated: 2005-08-21 01:10 CEST
 
   What's this?
 
@@ -111,14 +111,11 @@
   Requirements
 
    For this script, you need iptables, tc and a QoS-enabled kernel. All
-   these binaries must support HTB. It may be possible that you need a
-   patched version of tc for that. I also use several kernel patches: The
-   TTL patch, which allows me to modify the TTL value of packets. If you
-   don't want this, it has no effect on shaping whatsoever. Then I use
-   PSCHED_CPU instead of PSCHED_JIFFIES for scheduling. Just replace it
-   in pkt_sched.h. Check [7]Stef Coene's docum page for details. It
-   probably will work without that, too. I also lowered the default SFQ
-   queue length from 128 to 16. Again, more information at Stef's page.
+   these binaries must support HTB (usually the case unless you got a
+   really old installation, in which case you ought to update anyway). I
+   also use several kernel patches, none of which are actually required
+   (unless if you want P2P shaping and some other Hacks). See
+   README.patches in the tarball.
 
   Configuration
 
@@ -128,7 +125,40 @@
    included in the package. The stuff you most likely will have to change
    is the devices, the rates and the user settings. Otherwise the script
    won't work. The other stuff is mainly for people who know what they're
-   doing, and some of them even require patches.
+   doing.
+     * FEATURES
+          + This is a variable with a space-separated list of features
+            that should be enabled. Default is all enabled if you dont
+            set this variable.
+          + PROC:
+            Allow Fair NAT to change some system variables in /proc, like
+            setting /proc/sys/net/ipv4/ip_forward to 1.
+          + MODULES:
+            Try to load kernel modules for QoS first.
+          + RESET:
+            Fair NAT will replace all existing iptables rules with a very
+            basic (empty) configuration. Not healthy for firewalls. You
+            can disable this feature to keep the original rules in place.
+            See Firewall Support below.
+          + NAT:
+            Allow Fair NAT to configure NAT. You could disable this if
+            you prefer to set this up yourself / let your firewall do it.
+          + FORWARD:
+            Allow Fair NAT to configure Port Forwarding. Same as NAT, you
+            can disable this if you don't need it.
+          + QOS_DOWN:
+            Shape download traffic. If you know a little bit about
+            traffic shaping and believe that download shaping is
+            completely useless, feel free to disable this.
+          + QOS_UP:
+            Shaping upload traffic can be disabled also. If you disable
+            this and QOS_DOWN also, you could use Fair NAT for setting up
+            NAT and Port Forwarding only, although that's not really the
+            purpose of the script ;-)
+          + TOS:
+            Allow Fair NAT to modify the TOS (type-of-service) field of
+            packets. Right now, Fair NAT relies on this TOS field for
+            shaping, so using this feature is highly recommended.
      * LAN
           + DEV_LAN:
             The network device your local clients are connected to. For
@@ -225,7 +255,7 @@
           + USER_CEIL_DOWN:
             Allows lowering the maximum download rate for all users.
             Explanation see USER_CEIL_UP.
-     * IPP2P (experimental, see IPP2P section)
+     * IPP2P
           + IPP2P_ENABLE:
             Set to 0 (default), if IPP2P should be disabled. Otherwise
             set to 1. The following IPP2P settings only have an effect if
@@ -235,6 +265,9 @@
             Basically, you can specify here which P2P protocols should be
             detected. Default is "--ipp2p --apple --bit" (detect all
             protocols).
+          + IPP2P_UDP:
+            Newer versions of IPP2P also support UDP packet matching. Set
+            this variable to 1 if you want to support it.
           + IPP2P_DROP_ALL:
             Set to 1, if P2P traffic should be dropped in general.
             Otherwise set to 0 (default). Please note that this applies
@@ -252,7 +285,7 @@
             Howto for further information.
           + TTL_SET:
             Set the maximum TTL (Time-To-Live) for outgoing packets to a
-            specific value. This option requires a kernel patch. [8]Click
+            specific value. This option requires a kernel patch. [7]Click
             here for a more detailed description.
           + HTB_MPU:
             Use MPU for HTB. From the LARTC Howto on MPU: "A zero-sized
@@ -260,7 +293,7 @@
             uses less than 64 bytes. The Minimum Packet Unit determines
             the minimal token usage for a packet." This feature requires
             a patched tc binary. This binary is included in the package.
-            Go to the [9]official HTB homepage if you want to patch it
+            Go to the [8]official HTB homepage if you want to patch it
             yourself (can be troublesome). Download both HTB and MPU
             patches there.
           + HTB_OVERHEAD:
@@ -268,13 +301,18 @@
             According to the HTB page, "overhead implementation is a bit
             hack", but I guess that's why this is in the Hacks section of
             my script. ;-)
+          + FAIRNAT_PREFIX:
+            The prefix is used for Fair NAT's iptables chains. The
+            default value "FAIRNAT" causes created chains to be called
+            FAIRNAT_PREROUTING, FAIRNAT_FORWARD, and so on. This is in
+            the hacks section because changing this could allow running
+            multiple instances of Fair NAT on a single server (whatever
+            you'd want that for).
      * Binaries
           + BIN_TC:
-            You need a HTB-enabled tc binary to use this script. Per
-            default, the script looks for binaries called 'tc-htb' or
-            'tc'. If it has another name on your machine, set it here.
-            Per default, the first binary found on your $PATH (returned
-            by 'which binary') is used.
+            tc binary which supports HTB. Fair NAT will no longer check
+            for 'tc-htb', since the times when we had to patch the kernel
+            to obtain HTB support are long gone.
           + BIN_IPT:
             iptables
           + BIN_IFC:
@@ -306,13 +344,13 @@
        easier to change the FAIRNAT_CONFIG variable directly in the
        script)
 
-  IPP2P support (EXPERIMENTAL)
+  IPP2P support
 
    Let me add some notes about the IPP2P support introduced in Fair NAT
    v0.72. IPP2P provides a (more or less) reliable means to detect
    traffic of peer-to-peer (filesharing) applications. To use it, you
    first have to patch the kernel and the iptables program. You can get
-   the patches at the [10]Official IPP2P Homepage along with plenty
+   the patches at the [9]Official IPP2P Homepage along with plenty
    documentation. When that's done, you have to enable IPP2P in the Fair
    NAT configuration file, too. See the example configuration file for
    details.
@@ -326,7 +364,7 @@
    Argument' error. Another solution would be using an OLD version of the
    CONNMARK patch, but I haven't found any that worked together with
    kernel 2.4.26 so far. The patch is part of patch-o-matic-ng which you
-   can get on the [11]Official Netfilter Homepage .
+   can get on the [10]Official Netfilter Homepage .
 
    If IPP2P is enabled, Fair NAT uses it like this. If P2P traffic is
    forbidden in general, all packets recognized by IPP2P are dropped. End
@@ -346,15 +384,54 @@
    tells the Traffic Shaping mechanism which packet belongs to which
    user.
 
+  Firewall Support (Experimental)
+
+   With Fair NAT 0.80, I've started taking the first steps towards
+   Firewall support (which is one of the most requested features). In
+   order not to collide with Firewall iptables rules, Fair NAT now
+   creates it's very own private iptables chains. These can be flushed
+   without risking to lose something the Firewall might have set up.
+
+   However, there are at least three things about Firewall Support I need
+   to point out:
+     * For backward compatibility, Fair NAT will still reset all iptables
+       rules unless you remove the RESET feature from the FEATURES list
+       in fairnat.config.
+     * You will have to modify your Firewall to make it put packets into
+       the Fair NAT chains - otherwise Fair NAT will not be able to do
+       anything. See below for the rules you have to add.
+     * I still don't use a firewall myself, so this implementation is
+       just an untested theory and might not work at all.
+
+   For Firewall Support, it has to put packets into the Fair NAT chains
+   at some point. Ideally this is after the Firewall dropped unwanted
+   packets, but that's just a guess. The best spot to put the rules in
+   depends on the Firewall. Here's the rules:
+
+iptables -t nat -A PREROUTING -j FAIRNAT_PREROUTING
+iptables -t mangle -A PREROUTING -j FAIRNAT_PREROUTING
+iptables -A FORWARD -j FAIRNAT_FORWARD
+iptables -t mangle -A FORWARD -j FAIRNAT_FORWARD
+iptables -t nat -A POSTROUTING -j FAIRNAT_POSTROUTING
+iptables -t mangle -A POSTROUTING -j FAIRNAT_POSTROUTING
+
+   Of course, that's just a suggestion. You can modify these rules any
+   way you like. However, don't forget that packets that don't go into
+   the Fair NAT chains, will not be seen by Fair NAT rules, which could
+   have side effects like packets not being shaped properly and so on.
+
+   Please send me some feedback if this solution works for you.
+
   Download
 
-   WARNING: Use this script at your own risk only. At the moment, running
-   this script will remove all existing iptables rules. This means that
-   it is not likely to be compatible with a firewall (if you use one - I
-   don't). There might be other critical bugs too. Please keep that in
-   mind. Thanks.
+   WARNING: Use this script at your own risk only. It may remove all
+   existing firewall rules, it may have critical bugs that are lethal to
+   your system, it will set your duck on fire and many more bad things
+   may happen to you. I'm not responsible for any damage caused by this
+   script. Handle with care. Thanks.
 
-   The script can be found here: (newest version recommended)
+   The script can be found here: (use 0.79 if you have issues with 0.80)
+     * [11]fairnat-0.80 (Firewall "support", selectable Features)
      * [12]fairnat-0.79 (Custom download / upload ceil per user, support
        rate units other than kbit.)
      * [13]fairnat-0.78 (Replaced hardcoded TTL setting with the
@@ -444,6 +521,10 @@
        under heavy load conditions possible. If you use growisofs, and
        experience speed breakdowns (reported writing speed is not
        constant), this is probably the right script for you.
+     * [31]genkouyoushi.ps: A generator for Japanese calligraphy paper
+       written in PostScript. It prints squares, circles, centerlines,
+       and characters. Here's an [32]example (big). Customizable by
+       changing variables at the beginning of the file.
 
 References
 
@@ -453,11 +534,11 @@ References
    4. http://freshmeat.net/redir/htb.init/21951/url_homepage/htbinit
    5. http://www.metamorpher.de/files/fairnat.png
    6. http://www.metamorpher.de/files/fairnat_ipp2p.png
-   7. http://www.docum.org/
-   8. http://iptables-tutorial.frozentux.net/iptables-tutorial.html#TTLTARGET
-   9. http://luxik.cdi.cz/~devik/qos/htb/
-  10. http://rnvs.informatik.uni-leipzig.de/ipp2p/index_en.html
-  11. http://www.netfilter.org/
+   7. http://iptables-tutorial.frozentux.net/iptables-tutorial.html#TTLTARGET
+   8. http://luxik.cdi.cz/~devik/qos/htb/
+   9. http://www.ipp2p.org/
+  10. http://www.netfilter.org/
+  11. http://www.metamorpher.de/files/fairnat-0.80.tar.gz
   12. http://www.metamorpher.de/files/fairnat-0.79.tar.gz
   13. http://www.metamorpher.de/files/fairnat-0.78.tar.gz
   14. http://www.metamorpher.de/files/fairnat-0.77.tar.gz
@@ -472,8 +553,10 @@ References
   23. http://www.metamorpher.de/files/fairnat-0.69.tar.gz
   24. http://www.metamorpher.de/files/fairnat-0.68.tar.gz
   25. mailto:Andreas.Klauer@metamorpher.de
-  26. http://www.metamorpher.de/files/tc-graph.pl
+  26. http://www.metamorpher.de/files/tc-graph.pl.txt
   27. http://www.docum.org/stef.coene/qos/show_qos/index.html
   28. http://www.graphviz.org/
   29. http://www.metamorpher.de/files/fairnat.png
   30. http://www.metamorpher.de/files/burn-dvd-image.sh
+  31. http://www.metamorpher.de/files/genkouyoushi.ps
+  32. http://www.metamorpher.de/files/genkouyoushi.gif

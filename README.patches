@@ -1,0 +1,66 @@
+Patches to use with Fair NAT
+----------------------------
+
+Since Fair NAT 0.80, I decided not to include patches anymore,
+for several reasons:
+
+  - Fair NAT does not actually require any patches
+    (except perhaps P2P).
+  - The kernel patches were not made by me anyway.
+  - I don't have much time to work on the script anymore,
+    so patches tend to get outdated very fast.
+  - It's impossible for me to provide patches for kernel
+    versions I was never and will never be using.
+  - Some patches made it into the software ages ago,
+    which means they were obsolete.
+
+Patches required for P2P
+------------------------
+
+If you want Fair NAT to block P2P, you need to install IPP2P.
+You can get it from www.ipp2p.org. Additionally, if you don't
+want to just block, but instead shape P2P, you need CONNMARK.
+If it's not part of the kernel yet, you'll have to get the
+patch from www.netfilter.org (patch-o-matic-ng).
+
+Actually, patch-o-matic-ng contains a lot of patches that might
+be useful for you. Have a look at it.
+
+Patches required for Hacks
+--------------------------
+
+TTL_SET requires the TTL patch. Otherwise you won't be able to change
+the Time-To-Live value of a packet. The patch is part of pom-ng which
+you can obtain from www.netfilter.org
+
+Some Tweaks I'm using
+---------------------
+
+In linux/include/net/pkt_sched.h, change
+    #define PSCHED_CLOCK_SOURCE    PSCHED_JIFFIES
+to
+    #define PSCHED_CLOCK_SOURCE    PSCHED_CPU
+unless the clock source can already be selected in the kernel
+config (I heard it was planned to allow that some time ago.)
+
+In linux/net/sched/sch_htb.c, change
+    #define HTB_HYSTERESIS 1
+to
+    #define HTB_HYSTERESIS 0
+It's supposed to improve accuracy at loss of speed.
+
+In linux/net/sched/sch_sfq.c, change
+    #define SFQ_DEPTH              128
+to
+    #define SFQ_DEPTH               16
+Fair NAT uses at least two SFQ queues per user, so it's a good
+idea to reduce queue size in order to avoid lag.
+
+
+Old kernels and iptables
+------------------------
+
+One or two years or so ago you had to patch kernel and tc
+for HTB support. Fair NAT even came with a tc-htb binary.
+If you still use such old software, don't even bother with
+patching - just get the up-to-date stable releases.

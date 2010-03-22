@@ -1,35 +1,15 @@
 #!/bin/bash
 # Use !/bin/bash -x instead if you want to know what the script does.
 # -------------------------------------------------------------------------
-# File:         http://www.metamorpher.de/fairnat/
-# Author:       Andreas Klauer
-# Date:         2003-07-31
-# Contact:      Andreas.Klauer@metamorpher.de
-# Licence:      GPL
-# Version:      v0.79 (2005-04-19 18:44 CEST)
+# File:         fairnat.sh
+# Version:      v0.80 (2005-08-21 01:09 CEST)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is available (for dialup users)
-# Kernel:       I run this script on a modified 2.4.26 kernel.
-#               Modifications in detail:
-#                 - TTL patch to modify TTL of outgoing packets
-#                 - Use PSCHED_CPU instead of PSCHED_JIFFIES
-#                 - Disable HTB_HYSTERICS for better latency (thanks, Andy)
-#                 - Lower SFQ queue length: 16 instead of 128 to avoid lags.
-# Credits:      Thanks to www.lartc.org for the great HOWTO.
-#               Thanks to www.docum.org for great overall FAQ and HINTS.
-#               Thanks to various people who published their own scripts on
-#               mailing lists. I don't remember your names in detail, but those
-#               scripts in general did give me some hints.
-#               Thanks to all those people mailing me about suggestions,
-#               feature requests and other stuff.
-# Modified:     See CHANGELOG
+# Licence:      GPL-2
+# Author:       Andreas Klauer <Andreas.Klauer@metamorpher.de>
+# Project page: http://www.metamorpher.de/fairnat/
 #
-
-# TODO:  Download traffic is only shaped for clients, not for the router.
-# TODO:: We somehow have to allow HTB shaping traffic of the router as if it
-# TODO:: were just another machine in the LAN.
-# TODO:: Maybe it can be done by using a virtual network device (IMQ)?
 
 # === Variables: ===
 
@@ -37,7 +17,7 @@
 FAIRNAT_CONFIG="/etc/ppp/fairnat.config"
 
 # Please note: There are much more variables, but they are defined in
-#              configure and in FAIRNAT_CONFIG.
+#              the FAIRNAT_CONFIG file. See example file.
 
 # Workaround for localized (i18ned) binaries:
 LC_ALL=C
@@ -110,19 +90,16 @@ function configure
     C_CONFIG_FILE=$1
 
 # System settings:
-    BIN_TC=`which tc-htb`
-
-    if [ "$BIN_TC" == "" ];
-    then
-        BIN_TC=`which tc`
-    fi
-
+    BIN_TC=`which tc`
     BIN_IPT=`which iptables`
     BIN_IFC=`which ifconfig`
     BIN_GREP=`which grep`
     BIN_SED=`which sed`
     BIN_ECHO=`which echo`
     BIN_MODPROBE=`which modprobe`
+
+# FEATURES settings:
+    FEATURES="PROC MODULES IPT_RESET IPT_NAT IPT_FORWARD QOS_DOWN QOS_UP"
 
 # LAN settings:
     DEV_LAN=eth0
@@ -148,16 +125,24 @@ function configure
     IPP2P_DROP_ALL=0
     IPP2P_DROP_MARKED=0
     IPP2P_OPTIONS="--ipp2p --apple --bit"
+    IPP2P_UDP=0
 
 # Hacks
     MSS_CLAMPING=0
     TTL_SET=0
     HTB_MPU=0
     HTB_OVERHEAD=0
+    FAIRNAT_PREFIX="FAIRNAT"
 
 # Now that all variables have default values set, replace the ones
 # defined by the user in the configuration file:
     [ -f $C_CONFIG_FILE ] && source $C_CONFIG_FILE
+
+# Enable desired features
+    for f in $FEATURES;
+    do
+        eval FEATURE_$f=1
+    done;
 
 # Now comes the part that can't be configured by the user:
 
@@ -198,7 +183,7 @@ function configure
     RATE_LOCAL_UP=$(($RATE_LOCAL_PERCENT*$RATE_UP/100))
 
 # Calculate ceiling rate per user.
-    if [ $CEIL_USER_UP == 0 ];
+    if [ "$CEIL_USER_UP" == "0" ];
     then
         CEIL_USER_UP=$RATE_UP;
     else
@@ -206,7 +191,7 @@ function configure
         CEIL_USER_UP=$RATE
     fi
 
-    if [ $CEIL_USER_DOWN == 0 ];
+    if [ "$CEIL_USER_DOWN" == "0" ];
     then
         CEIL_USER_DOWN=$RATE_DOWN;
     else
@@ -247,6 +232,15 @@ function configure
     then
         HTB_OPT="$HTB_OPT overhead $HTB_OVERHEAD"
     fi
+
+# Some abbreviations:
+    FN_FORWARD="$FAIRNAT_PREFIX"_FORWARD
+    FN_PREROUTING="$FAIRNAT_PREFIX"_PREROUTING
+    FN_POSTROUTING="$FAIRNAT_PREFIX"_POSTROUTING
+    FN_CHK_TOS="$FAIRNAT_PREFIX"_CHK_TOS
+    FN_ACK_TOS="$FAIRNAT_PREFIX"_ACK_TOS
+    FN_IPP2PMARK="$FAIRNAT_PREFIX"_IPP2PMARK
+    FN_ALL="$FN_FORWARD $FN_PREROUTING $FN_POSTROUTING $FN_CHK_TOS $FN_ACK_TOS $FN_IPP2PMARK"
 }
 
 # -----------------------------------------------------------------------------
@@ -260,9 +254,8 @@ function configure
 # -----------------------------------------------------------------------------
 function modules
 {
-#     note: the /dev/null is just to avoid stupid error messages for
-#           all the sane people who compiled the stuff directly into
-#           the kernel.
+# Load some modules...
+# TODO:  Most of them are not required. Needs a cleanup.
     $BIN_MODPROBE ip_tables 2> /dev/null > /dev/null
     $BIN_MODPROBE ip_conntrack 2> /dev/null > /dev/null
     $BIN_MODPROBE iptable_nat 2> /dev/null > /dev/null
@@ -292,7 +285,7 @@ function modules
     $BIN_MODPROBE sch_teql 2> /dev/null > /dev/null
 
 #   Experimental IPP2P support:
-    if [ $IPP2P_ENABLE == 1 ];
+    if [ "$IPP2P_ENABLE" == "1" ];
     then
         $BIN_MODPROBE ipt_ipp2p 2> /dev/null > /dev/null
     fi
@@ -307,75 +300,86 @@ function modules
 # -----------------------------------------------------------------------------
 function iptables
 {
-# 1: Set TOS for several stuff.
-# TODO: Anything missing here? Tell me about it.
-    $BIN_IPT -t mangle -A PREROUTING -p icmp -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport telnet -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport ssh -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport ftp -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport ftp-data -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport telnet -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport ssh -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport ftp -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport ftp-data -j TOS --set-tos Maximize-Throughput
+# Set TOS for several stuff.
+    if [ "$FEATURE_TOS" == "1" ]
+    then
+        # TODO: Anything missing here? Tell me about it.
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p icmp -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --sport telnet -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --sport ssh -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --sport ftp -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --sport ftp-data -j TOS --set-tos Maximize-Throughput
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --dport telnet -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --dport ssh -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --dport ftp -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp --dport ftp-data -j TOS --set-tos Maximize-Throughput
 
-# 3: Correcting TOS for large packets with Minimize-Delay-TOS
-    $BIN_IPT -t mangle -N CHK_TOS
-    $BIN_IPT -t mangle -A CHK_TOS -p tcp -m length --length 0:512  -j RETURN
-    $BIN_IPT -t mangle -A CHK_TOS -p udp -m length --length 0:1024 -j RETURN
-    $BIN_IPT -t mangle -A CHK_TOS -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -t mangle -A CHK_TOS -j RETURN
+        # Correcting TOS for large packets with Minimize-Delay-TOS
+        $BIN_IPT -t mangle -A $FN_CHK_TOS -p tcp -m length --length 0:512  -j RETURN
+        $BIN_IPT -t mangle -A $FN_CHK_TOS -p udp -m length --length 0:1024 -j RETURN
+        $BIN_IPT -t mangle -A $FN_CHK_TOS -j TOS --set-tos Maximize-Throughput
+        $BIN_IPT -t mangle -A $FN_CHK_TOS -j RETURN
 
-    $BIN_IPT -t mangle -A PREROUTING -m tos --tos Minimize-Delay -j CHK_TOS
+        $BIN_IPT -t mangle -A $FN_PREROUTING -m tos --tos Minimize-Delay -j $FN_CHK_TOS
 
-# 4: Modifying TOS for TCP control packets: (from www.docum.org / Stef Coene)
-    $BIN_IPT -t mangle -N ACK_TOS
-    $BIN_IPT -t mangle -A ACK_TOS -m tos --tos ! Normal-Service -j RETURN
-    $BIN_IPT -t mangle -A ACK_TOS -p tcp -m length --length 0:256 -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A ACK_TOS -p tcp -m length --length 256: -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -t mangle -A ACK_TOS -j RETURN
-    $BIN_IPT -t mangle -A PREROUTING -p tcp -m tcp --tcp-flags SYN,RST,ACK ACK -j ACK_TOS
+        # Modifying TOS for TCP control packets: (from www.docum.org / Stef Coene)
+        $BIN_IPT -t mangle -A $FN_ACK_TOS -m tos --tos ! Normal-Service -j RETURN
+        $BIN_IPT -t mangle -A $FN_ACK_TOS -p tcp -m length --length 0:256 -j TOS --set-tos Minimize-Delay
+        $BIN_IPT -t mangle -A $FN_ACK_TOS -p tcp -m length --length 256: -j TOS --set-tos Maximize-Throughput
+        $BIN_IPT -t mangle -A $FN_ACK_TOS -j RETURN
+        $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp -m tcp --tcp-flags SYN,RST,ACK ACK -j $FN_ACK_TOS
+    fi
 
-# 5: Hacks.
+# Hacks.
     # Read about MSS Clamping in the LARTC Howto.
     if [ "$MSS_CLAMPING" != "0" ];
     then
-        $BIN_IPT -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS $MSS_CLAMPING
+        $BIN_IPT -A $FN_FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS $MSS_CLAMPING
     fi
 
     # Set TTL to a specific value. This hack requires a kernel patch.
     # See fairnat.config, Hacks section for details.
     if [ "$TTL_SET" != "0" ]
     then
-        $BIN_IPT -t mangle -A PREROUTING -j TTL --ttl-set $TTL_SET
+        $BIN_IPT -t mangle -A $FN_PREROUTING -j TTL --ttl-set $TTL_SET
     fi
 
-# 6: IPP2P support (experimental)
-    if [ $IPP2P_ENABLE == 1 ];
+# IPP2P support (experimental)
+    if [ "$IPP2P_ENABLE" == "1" ];
     then
-        if [ $IPP2P_DROP_ALL == 1 ];
+        if [ "$IPP2P_DROP_ALL" == "1" ];
         then
 # P2P traffic should be forbidden in general.
-            $BIN_IPT -A FORWARD -p tcp -m ipp2p $IPP2P_OPTIONS -j DROP
+            if [ "$IPP2P_UDP" == "1" ]
+            then
+                $BIN_IPT -A $FN_FORWARD -m ipp2p $IPP2P_OPTIONS -j DROP
+            else
+                $BIN_IPT -A $FN_FORWARD -p tcp -m ipp2p $IPP2P_OPTIONS -j DROP
+            fi
 
-            if [ $IPP2P_DROP_MARKED == 1 ];
+            if [ "$IPP2P_DROP_MARKED" == "1" ];
             then
 # Drop previously marked connections, too.
-                $BIN_IPT -t mangle -A PREROUTING -p tcp -j CONNMARK --restore-mark
-                $BIN_IPT -t mangle -A PREROUTING -p tcp -m mark --mark 1 -j DROP
+                $BIN_IPT -t mangle -A $FN_PREROUTING -j CONNMARK --restore-mark
+                $BIN_IPT -t mangle -A $FN_PREROUTING -m mark --mark 1 -j DROP
             fi
         else
 # P2P should be allowed, but with low prio.
 
 # Create a new chain for IPP2P connection marking:
-            $BIN_IPT -t mangle -N IPP2PMARK
-            $BIN_IPT -t mangle -A IPP2PMARK -j CONNMARK --restore-mark
-            $BIN_IPT -t mangle -A IPP2PMARK -m mark --mark 1 -j RETURN
-            $BIN_IPT -t mangle -A IPP2PMARK -p tcp -m ipp2p $IPP2P_OPTIONS -j MARK --set-mark 1
-            $BIN_IPT -t mangle -A IPP2PMARK -m mark --mark 1 -j CONNMARK --save-mark
+            $BIN_IPT -t mangle -A $FN_IPP2PMARK -j CONNMARK --restore-mark
+            $BIN_IPT -t mangle -A $FN_IPP2PMARK -m mark --mark 1 -j RETURN
+            $BIN_IPT -t mangle -A $FN_IPP2PMARK -m ipp2p $IPP2P_OPTIONS -j MARK --set-mark 1
+            $BIN_IPT -t mangle -A $FN_IPP2PMARK -m mark --mark 1 -j CONNMARK --save-mark
 
-# Let all TCP packets run through the IPP2P chain:
-            $BIN_IPT -t mangle -A PREROUTING -p tcp -j IPP2PMARK
+# Let all tcp packets run through the IPP2P chain:
+            $BIN_IPT -t mangle -A $FN_PREROUTING -p tcp -j $FN_IPP2PMARK
+
+# UDP packets as well if enabled:
+            if [ "$IPP2P_UDP" == "1" ]
+            then
+                $BIN_IPT -t mangle -A $FN_PREROUTING -p udp -j $FN_IPP2PMARK
+            fi
 
 # NOTE: The mark will be modified again later in the user rules.
         fi
@@ -505,7 +509,7 @@ function user_class_default
                   quantum $DEV_NET_MTU $HTB_OPT
 
 # Add PRIO qdisc on top of HTB:
-    if [ $IPP2P_ENABLE == 0 -o $IPP2P_DROP_ALL == 1 ];
+    if [ "$IPP2P_ENABLE" == "0" -o "$IPP2P_DROP_ALL" == "1" ];
     then
 # Default: IPP2P disabled. Create 3 bands.
         $BIN_TC qdisc add dev $UC_DEV parent 1:$UC_MARK handle $UC_MARK: prio
@@ -605,7 +609,7 @@ function user_class_wonder
 
 # In case of IPP2P: Put it in class 3.
 
-    if [ $IPP2P_ENABLE == 1 -a $IPP2P_DROP_ALL == 0 ];
+    if [ "$IPP2P_ENABLE" == "1" -a "$IPP2P_DROP_ALL" == "0" ];
     then
         $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+3)) \
                       htb rate $((8*$UC_CEIL/10))bps burst 6k prio 3 \
@@ -632,28 +636,45 @@ function fair_nat
     FN_IP=$1
 
 # Add IPTables rules for NAT:
-    $BIN_IPT -t nat -A POSTROUTING -o $DEV_NET -s $FN_IP -j MASQUERADE
+    if [ "$FEATURE_NAT" == "1" ]
+    then
+        $BIN_IPT -t nat -A $FN_POSTROUTING -o $DEV_NET -s $FN_IP -j MASQUERADE
+    fi
 
 # Mark packages (if IPP2P is disabled)
-    if [ $IPP2P_ENABLE == 0 -o $IPP2P_DROP_ALL == 1 ];
+    if [ "$IPP2P_ENABLE" == "0" -o "$IPP2P_DROP_ALL" == "1" ];
     then
-        $BIN_IPT -t mangle -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
-                 -j MARK --set-mark $MARK
-        $BIN_IPT -t mangle -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
-                 -j MARK --set-mark $MARK
+        if [ "$FEATURE_QOS_UP" == "1" ]
+        then
+            $BIN_IPT -t mangle -A $FN_FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
+                     -j MARK --set-mark $MARK
+        fi
+
+        if [ "$FEATURE_QOS_DOWN" == "1" ]
+        then
+            $BIN_IPT -t mangle -A $FN_FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
+                     -j MARK --set-mark $MARK
+        fi
 
 # Mark packages (if IPP2P is enabled)
 # IPP2P packages will get MARK+1.
 # Too bad that there's no --add-mark, it would've made things so much easier.
     else
-        $BIN_IPT -t mangle -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
-                 -m mark --mark 0 -j MARK --set-mark $MARK
-        $BIN_IPT -t mangle -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
-                 -m mark --mark 1 -j MARK --set-mark $(($MARK+1))
-        $BIN_IPT -t mangle -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
-                 -m mark --mark 0 -j MARK --set-mark $MARK
-        $BIN_IPT -t mangle -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
-                 -m mark --mark 1 -j MARK --set-mark $(($MARK+1))
+        if [ "$FEATURE_QOS_UP" == "1" ]
+        then
+            $BIN_IPT -t mangle -A $FN_FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
+                     -m mark --mark 0 -j MARK --set-mark $MARK
+            $BIN_IPT -t mangle -A $FN_FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
+                     -m mark --mark 1 -j MARK --set-mark $(($MARK+1))
+        fi
+
+        if [ "$FEATURE_QOS_DOWN" == "1" ]
+        then
+            $BIN_IPT -t mangle -A $FN_FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
+                     -m mark --mark 0 -j MARK --set-mark $MARK
+            $BIN_IPT -t mangle -A $FN_FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
+                     -m mark --mark 1 -j MARK --set-mark $(($MARK+1))
+        fi
     fi
 }
 
@@ -673,8 +694,8 @@ function forward
     F_PORT=$2
 
 # Add IPTables rules for DNAT:
-    $BIN_IPT -t nat -A PREROUTING -i $DEV_NET -p tcp --dport $PORT -j DNAT --to-destination $F_IP
-    $BIN_IPT -t nat -A PREROUTING -i $DEV_NET -p udp --dport $PORT -j DNAT --to-destination $F_IP
+    $BIN_IPT -t nat -A $FN_PREROUTING -i $DEV_NET -p tcp --dport $PORT -j DNAT --to-destination $F_IP
+    $BIN_IPT -t nat -A $FN_PREROUTING -i $DEV_NET -p udp --dport $PORT -j DNAT --to-destination $F_IP
 
 # Marking these packets:
 
@@ -690,41 +711,70 @@ function forward
 function stop_fairnat
 {
 # reset qdisc
-    $BIN_TC qdisc del dev $DEV_NET root 2> /dev/null > /dev/null
-    $BIN_TC qdisc del dev $DEV_NET ingress 2> /dev/null > /dev/null
-    $BIN_TC qdisc del dev $DEV_LAN root 2> /dev/null > /dev/null
-    $BIN_TC qdisc del dev $DEV_LAN ingress 2> /dev/null > /dev/null
+
+    if [ "$FEATURE_QOS_UP" == "1" ]
+    then
+        $BIN_TC qdisc del dev $DEV_NET root 2> /dev/null > /dev/null
+        $BIN_TC qdisc del dev $DEV_NET ingress 2> /dev/null > /dev/null
+    fi
+
+    if [ "$FEATURE_QOS_DOWN" == "1" ]
+    then
+        $BIN_TC qdisc del dev $DEV_LAN root 2> /dev/null > /dev/null
+        $BIN_TC qdisc del dev $DEV_LAN ingress 2> /dev/null > /dev/null
+    fi
 
 # reset iptables:
+    if [ "$FEATURE_RESET" == "1" ]
+    then
+        # reset the default policies in the filter table.
+        $BIN_IPT -P INPUT ACCEPT
+        $BIN_IPT -P FORWARD ACCEPT
+        $BIN_IPT -P OUTPUT ACCEPT
 
-# reset the default policies in the filter table.
-    $BIN_IPT -P INPUT ACCEPT
-    $BIN_IPT -P FORWARD ACCEPT
-    $BIN_IPT -P OUTPUT ACCEPT
+        # reset the default policies in the nat table.
+        $BIN_IPT -t nat -P PREROUTING ACCEPT
+        $BIN_IPT -t nat -P POSTROUTING ACCEPT
+        $BIN_IPT -t nat -P OUTPUT ACCEPT
 
-# reset the default policies in the nat table.
-    $BIN_IPT -t nat -P PREROUTING ACCEPT
-    $BIN_IPT -t nat -P POSTROUTING ACCEPT
-    $BIN_IPT -t nat -P OUTPUT ACCEPT
+        # reset the default policies in the mangle table.
+        $BIN_IPT -t mangle -P PREROUTING ACCEPT
+        $BIN_IPT -t mangle -P OUTPUT ACCEPT
 
-# reset the default policies in the mangle table.
-    $BIN_IPT -t mangle -P PREROUTING ACCEPT
-    $BIN_IPT -t mangle -P OUTPUT ACCEPT
+        # flush all the rules in the filter and nat tables.
+        $BIN_IPT -F
+        $BIN_IPT -t nat -F
+        $BIN_IPT -t mangle -F
 
-# flush all the rules in the filter and nat tables.
-    $BIN_IPT -F
-    $BIN_IPT -t nat -F
-    $BIN_IPT -t mangle -F
+        # erase all chains that's not default in filter and nat table.
+        $BIN_IPT -X
+        $BIN_IPT -t nat -X
+        $BIN_IPT -t mangle -X
+    fi
 
-# erase all chains that's not default in filter and nat table.
-    $BIN_IPT -X
-    $BIN_IPT -t nat -X
-    $BIN_IPT -t mangle -X
+    # reset only Fair NAT rules here.
+    for table in "" "-t nat" "-t mangle";
+    do
+        for chain in $FN_ALL;
+        do
+            # create chain
+            $BIN_IPT $table -N $chain 2> /dev/null > /dev/null
 
-# reset other stuff
-    $BIN_ECHO 1 > /proc/sys/net/ipv4/ip_forward
-    $BIN_ECHO 1 > /proc/sys/net/ipv4/ip_dynaddr
-    $BIN_ECHO 1 > /proc/sys/net/ipv4/tcp_syncookies
+            # flush chain (in case it already existed)
+            $BIN_IPT $table -F $chain 2> /dev/null > /dev/null
+        done;
+    done;
+
+# If we just reset, add required references to Fair NAT chains.
+    if [ "$FEATURE_RESET" == "1" ]
+    then
+        $BIN_IPT -t nat -A PREROUTING -j $FN_PREROUTING
+        $BIN_IPT -t mangle -A PREROUTING -j $FN_PREROUTING
+        $BIN_IPT -A FORWARD -j $FN_FORWARD
+        $BIN_IPT -t mangle -A FORWARD -j $FN_FORWARD
+        $BIN_IPT -t nat -A POSTROUTING -j $FN_POSTROUTING
+        $BIN_IPT -t mangle -A POSTROUTING -j $FN_POSTROUTING
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -742,7 +792,17 @@ function start_fairnat
     stop_fairnat
 
 # Load some modules.
-    modules
+    if [ "$FEATURE_MODULES" == "1" ]
+    then
+        modules
+    fi
+
+# Make sure /proc is set up all right.
+    if [ "$FEATURE_PROC" == "1" ]
+    then
+        # TODO: Anything else required?
+        echo 1 > /proc/sys/net/ipv4/ip_forward
+    fi
 
 # --- Basic IPTables Setup: ---
     iptables
@@ -750,14 +810,20 @@ function start_fairnat
 # --- Traffic Shaping: ---
 
 # User independent class structure for DEV_NET:
-    parent_class_$CLASS_MODE $DEV_NET $RATE_UP \
-        $(($RATE_USER_UP*$NUM_USERS)) $RATE_UP \
-        $RATE_LOCAL_UP $RATE_UP
+    if [ "$FEATURE_QOS_UP" == "1" ]
+    then
+        parent_class_$CLASS_MODE $DEV_NET $RATE_UP \
+            $(($RATE_USER_UP*$NUM_USERS)) $RATE_UP \
+            $RATE_LOCAL_UP $RATE_UP
+    fi
 
 # User independent class structure for DEV_LAN:
-    parent_class_$CLASS_MODE $DEV_LAN $RATE_LAN \
-        $(($RATE_USER_DOWN*$NUM_USERS)) $RATE_DOWN \
-        $(($RATE_LAN-($RATE_USER_DOWN*$NUM_USERS))) $RATE_LAN
+    if [ "$FEATURE_QOS_DOWN" == "1" ]
+    then
+        parent_class_$CLASS_MODE $DEV_LAN $RATE_LAN \
+            $(($RATE_USER_DOWN*$NUM_USERS)) $RATE_DOWN \
+            $(($RATE_LAN-($RATE_USER_DOWN*$NUM_USERS))) $RATE_LAN
+    fi
 
 # Please see parent_class documentation above for explanation of the parameters
 # the first line gives the function name, the device and the device rate
@@ -808,13 +874,27 @@ function start_fairnat
         fi
 
 # Create classes for this user:
-        if [ $BORROW == 1 ];
+        if [ "$BORROW" == "1" ];
         then
-            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $CUSTOM_USER_UP
-            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $CUSTOM_USER_DOWN
+            if [ "$FEATURE_QOS_UP" == "1" ]
+            then
+                user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $CUSTOM_USER_UP
+            fi
+
+            if [ "$FEATURE_QOS_DOWN" == "1" ]
+            then
+                user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $CUSTOM_USER_DOWN
+            fi
         else
-            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_USER_UP
-            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_USER_DOWN
+            if [ "$FEATURE_QOS_UP" == "1" ]
+            then
+                 user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_USER_UP
+            fi
+
+            if [ "$FEATURE_QOS_DOWN" == "1" ]
+            then
+                user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_USER_DOWN
+            fi
         fi
 
 # If a user has more than one IP, get the single IPs now.
@@ -833,15 +913,18 @@ function start_fairnat
     done;
 
 # --- Port Forwarding: ---
-    PORT_ARRAY=($PORTS)
+    if [ "$FEATURE_FORWARD" == 1 ]
+    then
+        PORT_ARRAY=($PORTS)
 
-    for ((i=0; i<$NUM_PORTS; i+=2));
-    do
-        IP=$DEV_LAN_SUBNET.${PORT_ARRAY[$i]};
-        PORT=${PORT_ARRAY[$i+1]}
+        for ((i=0; i<$NUM_PORTS; i+=2));
+        do
+            IP=$DEV_LAN_SUBNET.${PORT_ARRAY[$i]};
+            PORT=${PORT_ARRAY[$i+1]}
 
-        forward $IP $PORT
-    done;
+            forward $IP $PORT
+        done;
+    fi
 }
 # end of start_fairnat
 
@@ -863,7 +946,7 @@ do
 done;
 
 # Otherwise just use the standard config.
-if [ $CONFIG_CALLED == 0 ];
+if [ "$CONFIG_CALLED" == "0" ];
 then
     configure $FAIRNAT_CONFIG
 fi
@@ -882,7 +965,7 @@ do
                 ;;
 
         version)
-                echo "Fair NAT v0.79 maintained by <Andreas.Klauer@metamorpher.de>."
+                echo "Fair NAT v0.80 maintained by <Andreas.Klauer@metamorpher.de>."
                 exit 0
                 ;;
 
@@ -895,6 +978,8 @@ do
 
         info)
 # Give some information about our config.
+                echo "--- FEATURES ---"
+                echo "$FEATURES"
                 echo "--- LAN ---"
                 echo "DEV:        $DEV_LAN"
                 echo "IP:         $DEV_LAN_IP"
@@ -916,12 +1001,14 @@ do
                 echo "RATE_LOCAL_UP:    $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
                 echo "--- IPP2P ---"
                 echo "IPP2P_ENABLE:      $IPP2P_ENABLE"
+                echo "IPP2P_UDP:         $IPP2P_UDP"
                 echo "IPP2P_DROP_ALL:    $IPP2P_DROP_ALL"
                 echo "IPP2P_DROP_MARKED: $IPP2P_DROP_MARKED"
                 echo "--- HACKS ---"
-                echo "MSS_CLAMPING: $MSS_CLAMPING"
-                echo "HTB_MPU:      $HTB_MPU"
-                echo "HTB_OVERHEAD: $HTB_OVERHEAD"
+                echo "MSS_CLAMPING:   $MSS_CLAMPING"
+                echo "HTB_MPU:        $HTB_MPU"
+                echo "HTB_OVERHEAD:   $HTB_OVERHEAD"
+                echo "FAIRNAT_PREFIX: $FAIRNAT_PREFIX"
                 echo "--- BINARIES ---"
                 echo "iptables: $BIN_IPT"
                 echo "tc:       $BIN_TC"

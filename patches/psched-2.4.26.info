@@ -1,4 +1,0 @@
-psched-2.4.26
-
-  This patch uses PSCHED_CPU instead of PSCHED_JIFFIES for accuracy reasons.
-  Check out www.docum.org for details.

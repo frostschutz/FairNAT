@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      v0.75 (2004-05-12 00:08)
+# Version:      v0.76 (2004-08-07 14:26)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is available (for dialup users)
@@ -219,10 +219,6 @@ function modules
 # -----------------------------------------------------------------------------
 function iptables
 {
-    $BIN_IPT -t mangle -A PREROUTING -p tcp -d 192.69.221.130 -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -t mangle -A PREROUTING -p tcp -s 192.69.221.130 -j TOS --set-tos Minimize-Delay
-
-
 # 1: TTL generally set to 64, because different TTL values is a dead giveaway
 #    that there are multiple machines behind the router.
 #    Requires Kernel-TTL-Patch.
@@ -770,7 +766,7 @@ do
                 ;;
 
         version)
-                echo "Fair NAT v0.75 maintained by <Andreas.Klauer@metamorpher.de>."
+                echo "Fair NAT v0.76 maintained by <Andreas.Klauer@metamorpher.de>."
                 exit 0
                 ;;
 

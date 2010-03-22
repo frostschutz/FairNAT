@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      0.72 (2004-05-08 17:07)
+# Version:      0.73
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is dialup and ready
@@ -124,7 +124,7 @@ function configure
 # RATE_LOCAL_PERCENT of bandwidth reserved for local upload.
 # We don't shape local download as of yet, so no reservation here.
     RATE_USER_DOWN=$(($RATE_DOWN/$NUM_USERS))
-    RATE_USER_UP=$((((100-$RATE_LOCAL_PERCENT)*$RATE_UP)/$NUM_USERS))
+    RATE_USER_UP=$((((100-$RATE_LOCAL_PERCENT)*$RATE_UP)/($NUM_USERS*100)))
     RATE_LOCAL_UP=$(($RATE_LOCAL_PERCENT*$RATE_UP/100))
 
 # MARK offset:

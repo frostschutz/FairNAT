@@ -49,3 +49,7 @@
 ---- 2004-05-08 ---- v0.72 ---- Andreas Klauer ----
   Added experimental support for IPP2P. If you use it, you can either
   disable all P2P traffic in general or allow it with lowest priority.
+---- 2004-05-10 ---- v0.73 ---- Andreas Klauer ----
+  User upload rates were not calculated correctly (rate was set far
+  too high, even heigher than ceil) since v0.69 and nobody noticed.
+  This bug caused a lot of unnecessary packet drops.

@@ -1,0 +1,8 @@
+This directory contains kernel patches I use (mostly for better performance).
+They are all NOT made by me. Use at your own risk. Better get the newest
+versions of these patches directly off the net or something.
+
+Please see the respictive .info files for more information on each patch.
+
+There's also a binary: tc-htb. This is a patched tc with HTB and HTB-MPU
+and HTB-OVERHEAD support. See tc-htb.info for details.

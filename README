@@ -1,15 +1,16 @@
-                        Fair NAT for Linux Routers
+SOURCE: http://www.metamorpher.de/fairnat/
+
+                           Fair NAT for Linux Routers
 
   What's this?
 
-   This is the home of my linux router shaper script which allows
-   something like fair bandwidth sharing among clients in the local
-   network. The script is not great or anything - please don't expect the
-   holy grail here - I just thought I'd publish it because many people
-   helped me write it and maybe someone has some use for it. I bet there
-   are still lots of things that can be improved. Sorry about the crappy
-   design of this page, I don't have time to put more effort in better
-   looks.
+   This is the home of my linux router shaper script which allows something
+   like fair bandwidth sharing among clients in the local network. The script
+   is not great or anything - please don't expect the holy grail here - I
+   just thought I'd publish it because many people helped me write it and
+   maybe someone has some use for it. I bet there are still lots of things
+   that can be improved. Sorry about the crappy design of this page, I don't
+   have time to put more effort in better looks.
 
   Network
 
@@ -28,47 +29,44 @@
                  +-----+
 
    In words, it's a common setup. You have one internet connection, one
-   router and several people in your LAN (family, roommates, neighbours,
-   ...) who all want to use the internet.
+   router and several people in your LAN (family, roommates, neighbours, ...)
+   who all want to use the internet.
 
   Problem
 
-   You have a certain number of Clients (User A - User N) in your LAN
-   which are connected by a Switch (or a Hub or BNC) to the Linux Router
-   which is supposed to act as a gateway to the internet. The trouble now
-   is, User B has a lot of downloads running and User C uploads stuff day
-   and night, which leaves User A who only wants to use an interactive
-   SSH shell in the rain, since B and C already use up all bandwidth the
-   internet connection offers.
+   You have a certain number of Clients (User A - User N) in your LAN which
+   are connected by a Switch (or a Hub or BNC) to the Linux Router which is
+   supposed to act as a gateway to the internet. The trouble now is, User B
+   has a lot of downloads running and User C uploads stuff day and night,
+   which leaves User A who only wants to use an interactive SSH shell in the
+   rain, since B and C already use up all bandwidth the internet connection
+   offers.
 
   Solution
 
-   What we need to do is to share available bandwidth fairly among
-   clients. In order to achieve this, I first tried several searches at
-   Google and Freshmeat. This turned up quite a lot of results, like the
-   Linux Advanced Routing & Traffic Control HOWTO which is a must-read
-   and also contains great scripts, like the Wondershaper for single
-   users. Another great general purpose script I found was HTB.init,
-   which doesn't do anything by default, but gives you an easy way to
-   setup HTB queues. In case you prefer CBQ, there's a CBQ.init too. If
-   you don't know what I'm talking about, read the HOWTO above or
-   continue reading here.
+   What we need to do is to share available bandwidth fairly among clients.
+   In order to achieve this, I first tried several searches at Google and
+   Freshmeat. This turned up quite a lot of results, like the Linux Advanced
+   Routing & Traffic Control HOWTO which is a must-read and also contains
+   great scripts, like the Wondershaper for single users. Another great
+   general purpose script I found was HTB.init, which doesn't do anything by
+   default, but gives you an easy way to setup HTB queues. In case you prefer
+   CBQ, there's a CBQ.init too. If you don't know what I'm talking about,
+   read the HOWTO above or continue reading here.
 
   Script
 
-   Since I never found a script that did exactly what I wanted, I decided
-   to write my own. It's designed to be an all-I-need script, therefore
-   it does not just setup Traffic Shaping, but Masquerading and Port
-   Forwarding too. In short, it does everything that has to do with
-   IPTables and Traffic Control. I use HTB (Hierarchical Token Bucket) to
-   share bandwidth among clients (one class per client). On top of that I
-   added a PRIO queue to prioritize interactive traffic on a per-user
-   basis. On top of PRIO I set SFQ to treat connections fairly. In
-   version 0.72, experimental support for IPP2P to recognize peer-to-peer
-   traffic was added.
+   Since I never found a script that did exactly what I wanted, I decided to
+   write my own. It's designed to be an all-I-need script, therefore it does
+   not just setup Traffic Shaping, but Masquerading and Port Forwarding too.
+   In short, it does everything that has to do with IPTables and Traffic
+   Control. I use HTB (Hierarchical Token Bucket) to share bandwidth among
+   clients (one class per client). On top of that I added a PRIO queue to
+   prioritize interactive traffic on a per-user basis. On top of PRIO I set
+   SFQ to treat connections fairly. In version 0.72, experimental support for
+   IPP2P to recognize peer-to-peer traffic was added.
 
-   This is the simplified class setup for per user Fair NAT uses per
-   default:
+   This is the simplified class setup for per user Fair NAT uses per default:
     HTB class (for bandwidth sharing)
     |
     \-- PRIO (for prioritizing interactive traffic)
@@ -78,129 +76,133 @@
         \--- High-Traffic: SFQ
       [ \--- P2P:          SFQ (if IPP2P support is enabled only) ]
 
-   I bet this can still be improved and I'm always interested in ways to
-   do so. In case you want another class structure, this can be done by
+   I bet this can still be improved and I'm always interested in ways to do
+   so. In case you want another class structure, this can be done by
    replacing the parent_class and user_class functions in the script. See
-   CLASS_MODE in Configuration section and the function documentation in
-   the script for details. Feel free to send me your own functions with a
-   short explanation, if you want me to make them available for
-   everybody.
+   CLASS_MODE in Configuration section and the function documentation in the
+   script for details. Feel free to send me your own functions with a short
+   explanation, if you want me to make them available for everybody.
+
+   NEW: Now here's also a "real" graphic, which shows the complete
+   qdisc/class structure on $DEV_LAN if you use the unmodified example
+   configuration file. This graphic was created using a hacked version of
+   Stef Coene's show.pl script and GraphViz. Click here to see it, but I warn
+   you: it's quite big. Here's a similar picture, which includes IPP2P
+   support. Note that there are more filter rules (the blue arrows) now which
+   put the filesharing traffic into the user's prio band 4.
 
   What you can and what you can't expect
 
-   Without traffic shaping, users with low-traffic, interactive
-   connections experience ping times between 2-5 seconds, when other
-   users have up- and downloads running. This is of course deadly for SSH
-   connections. You can't work on remote machines like that. With my
-   script, I get much lower pings, at about 100-200ms. Compared to the
-   2000-5000ms before, this is a huge improvement. However, considering
-   that the ping on a free line would be at around 50ms, the connection
-   still feels laggy. It's nearly impossible to make perfect interactive
-   connections if the line is maxed out in both directions.
+   Without traffic shaping, users with low-traffic, interactive connections
+   experience ping times between 2-5 seconds, when other users have up- and
+   downloads running. This is of course deadly for SSH connections. You can't
+   work on remote machines like that. With my script, I get much lower pings,
+   at about 100-200ms. Compared to the 2000-5000ms before, this is a huge
+   improvement. However, considering that the ping on a free line would be at
+   around 50ms, the connection still feels laggy. It's nearly impossible to
+   make perfect interactive connections if the line is maxed out in both
+   directions.
 
   Requirements
 
-   For this script, you need iptables, tc and a QoS-enabled kernel. All
-   these binaries must support HTB. It may be possible that you need a
-   patched version of tc for that. I also use several kernel patches: The
-   TTL patch, which allows me to modify the TTL value of packets. If you
-   don't want this, it has no effect on shaping whatsoever. Then I use
-   PSCHED_CPU instead of PSCHED_JIFFIES for scheduling. Just replace it
-   in pkt_sched.h. Check Stef Coene's docum page for details. It probably
-   will work without that, too. I also lowered the default SFQ queue
-   length from 128 to 16. Again, more information at Stef's page.
+   For this script, you need iptables, tc and a QoS-enabled kernel. All these
+   binaries must support HTB. It may be possible that you need a patched
+   version of tc for that. I also use several kernel patches: The TTL patch,
+   which allows me to modify the TTL value of packets. If you don't want
+   this, it has no effect on shaping whatsoever. Then I use PSCHED_CPU
+   instead of PSCHED_JIFFIES for scheduling. Just replace it in pkt_sched.h.
+   Check Stef Coene's docum page for details. It probably will work without
+   that, too. I also lowered the default SFQ queue length from 128 to 16.
+   Again, more information at Stef's page.
 
   Configuration
 
-   Wheee, configuration. At first, my script didn't even have a
-   configuration file. Now that it has one, a whole load of options were
-   added to it. An example configuration file with lots of comments is
-   included in the package. The stuff you most likely will have to change
-   is the devices, the rates and the user settings. Otherwise the script
-   won't work. The other stuff is mainly for people who know what they're
-   doing, and some of them even require patches.
+   Wheee, configuration. At first, my script didn't even have a configuration
+   file. Now that it has one, a whole load of options were added to it. An
+   example configuration file with lots of comments is included in the
+   package. The stuff you most likely will have to change is the devices, the
+   rates and the user settings. Otherwise the script won't work. The other
+   stuff is mainly for people who know what they're doing, and some of them
+   even require patches.
      * LAN
           + DEV_LAN:
             The network device your local clients are connected to. For
             example eth1.
           + RATE_LAN:
-            The transfer rate in kbit/s of your LAN. This should be
-            faster than your internet connection speed. Use a realistic
-            value here. Don't blindly use 10/100Mbit on a 10/100Mbit
-            network - you usually don't get those speeds because of
-            overhead, collisions and such.
+            The transfer rate in kbit/s of your LAN. This should be faster
+            than your internet connection speed. Use a realistic value here.
+            Don't blindly use 10/100Mbit on a 10/100Mbit network - you
+            usually don't get those speeds because of overhead, collisions
+            and such.
      * Internet
           + DEV_NET:
-            The network device of your internet connection. For example
-            ppp0.
+            The network device of your internet connection. For example ppp0.
           + RATE_UP:
-            Your internet upload connection speed in kbit/s. Since ISPs
-            tend to overestimate their rates, you should use a realistic
-            value here (measure it on a completely free line).
+            Your internet upload connection speed in kbit/s. Since ISPs tend
+            to overestimate their rates, you should use a realistic value
+            here (measure it on a completely free line).
           + RATE_DOWN:
             Your internet download connection speed in kbit/s. Just like
             RATE_UP, you should use a realistic value here.
           + RATE_SUB_PERCENT:
-            If your modem or your ISP has queues, you should make your
-            router the bottleneck to avoid packet queueing which is bad
-            for latency. Per default, 5% of bandwidth are subbed to
-            achieve this. Read more about the bottleneck problem in the
-            LARTC Howto mentioned above.
+            If your modem or your ISP has queues, you should make your router
+            the bottleneck to avoid packet queueing which is bad for latency.
+            Per default, 5% of bandwidth are subbed to achieve this. Read
+            more about the bottleneck problem in the LARTC Howto mentioned
+            above.
           + RATE_LOCAL_PERCENT:
             How much of your internet bandwidth should the router get?
-            Usually, the machine requires some bandwidth for DNS requests
-            (if it does act as an DNS cacher), for SSH access from the
-            outside and similar. Per default, 5% of bandwidth are used
-            here, which should be fine for most setups, where the router
-            does not actively produce traffic (unlike webservers and
-            such). It's not a hard limit, therefore this setting mainly
-            ensures low latency for low traffic caused by the router.
+            Usually, the machine requires some bandwidth for DNS requests (if
+            it does act as an DNS cacher), for SSH access from the outside
+            and similar. Per default, 5% of bandwidth are used here, which
+            should be fine for most setups, where the router does not
+            actively produce traffic (unlike webservers and such). It's not a
+            hard limit, therefore this setting mainly ensures low latency for
+            low traffic caused by the router.
      * Clients
           + USERS:
-            Specify who to do NAT for (who is allowed to use this machine
-            as a gateway to the internet). Users are specified per IP and
-            must be in the same subnet as your LAN device. Therefore only
-            the last number of the client's machine is needed. For
-            example, if your gateway is 192.168.100.42, the number 183
-            would expand to 192.168.100.183. It is also possible to group
-            IPs (for users with more than one machine on the LAN) using
-            ':'. So for example "3 4 7:9:12 42 128" stands for 5 users,
-            one of which has 3 IPs.
+            Specify who to do NAT for (who is allowed to use this machine as
+            a gateway to the internet). Users are specified per IP and must
+            be in the same subnet as your LAN device. Therefore only the last
+            number of the client's machine is needed. For example, if your
+            gateway is 192.168.100.42, the number 183 would expand to
+            192.168.100.183. It is also possible to group IPs (for users with
+            more than one machine on the LAN) using ':'. So for example "3 4
+            7:9:12 42 128" stands for 5 users, one of which has 3 IPs.
           + PORTS:
-            Specify which ports are to be forwarded to which user (DNAT).
-            The syntax is "user port user port ...", whereas user is the
-            last number of the user's IP (e.g. 42) and port is either a
-            port number (e.g. 3333) or a port range (e.g. 3000:4000). For
-            multiple port ranges, the same IP can be specified multiple
-            times. So for example "3 5000 9 6000:6100 9 6300:6400 42
-            7000" means that port 5000 is forwarded to IP 3, ports
-            6000-6100 and 6300-6400 are forwarded to IP 9, and port 7000
-            is forwarded to IP 42. Please note that ports can't be
-            forwarded to multiple machines, therefore defining
-            overlapping port ranges won't work. Of course you can also
-            disable port forwarding in general by setting PORTS to "".
+            Specify which ports are to be forwarded to which user (DNAT). The
+            syntax is "user port user port ...", whereas user is the last
+            number of the user's IP (e.g. 42) and port is either a port
+            number (e.g. 3333) or a port range (e.g. 3000:4000). For multiple
+            port ranges, the same IP can be specified multiple times. So for
+            example "3 5000 9 6000:6100 9 6300:6400 42 7000" means that port
+            5000 is forwarded to IP 3, ports 6000-6100 and 6300-6400 are
+            forwarded to IP 9, and port 7000 is forwarded to IP 42. Please
+            note that ports can't be forwarded to multiple machines,
+            therefore defining overlapping port ranges won't work. Of course
+            you can also disable port forwarding in general by setting PORTS
+            to "".
           + CLASS_MODE:
             There are some other class structures available, in case you
             don't like the one described above. Usually, this is set to
-            "default". If you set it to "wonder" instead, every user will
-            get a class structure that is pretty similar to what the
-            Wondershaper script does. There may be others, check the
-            example configuration file for a detailed list. Of course, if
-            you have the know-how, you could also add your own by adding
-            a new parent_class and user_class function to the script.
-            Send your function to me and I'll include it here.
+            "default". If you set it to "wonder" instead, every user will get
+            a class structure that is pretty similar to what the Wondershaper
+            script does. There may be others, check the example configuration
+            file for a detailed list. Of course, if you have the know-how,
+            you could also add your own by adding a new parent_class and
+            user_class function to the script. Send your function to me and
+            I'll include it here.
           + BORROW:
-            Usually, users are allowed to borrow other users' bandwidth,
-            as long as they don't use it themselves. This way, all
-            available bandwidth is distributed among currently active
-            users. If you don't want that for any reason, you can turn it
-            off by setting this variable to 0. Then every user can only
-            use the bandwidth that was reserved for him, even if the line
-            is free.
+            Usually, users are allowed to borrow other users' bandwidth, as
+            long as they don't use it themselves. This way, all available
+            bandwidth is distributed among currently active users. If you
+            don't want that for any reason, you can turn it off by setting
+            this variable to 0. Then every user can only use the bandwidth
+            that was reserved for him, even if the line is free.
      * IPP2P (experimental, see IPP2P section)
           + IPP2P_ENABLE:
-            Set to 0 (default), if IPP2P should be disabled. Otherwise
-            set to 1. The following IPP2P settings only have an effect if
+            Set to 0 (default), if IPP2P should be disabled. Otherwise set to
+            1. The following IPP2P settings only have an effect if
             IPP2P_ENABLE is set to 1.
           + IPP2P_OPTIONS:
             Set IPP2P options. See IPP2P documentation for details.
@@ -208,27 +210,39 @@
             detected. Default is "--ipp2p --apple --bit" (detect all
             protocols).
           + IPP2P_DROP_ALL:
-            Set to 1, if P2P traffic should be dropped in general.
-            Otherwise set to 0 (default). Please note that this applies
-            only to new connections. Already established connections
-            probably won't be affected.
+            Set to 1, if P2P traffic should be dropped in general. Otherwise
+            set to 0 (default). Please note that this applies only to new
+            connections. Already established connections probably won't be
+            affected.
           + IPP2P_DROP_MARKED:
             This option has only an effect when you change IPP2P_DROP_ALL
-            from 0 to 1 while being connected to the internet. If you
-            enable this, packages of already marked connections will be
-            dropped, too.
+            from 0 to 1 while being connected to the internet. If you enable
+            this, packages of already marked connections will be dropped,
+            too.
      * Hacks
           + MSS_CLAMP:
-            With this, you can enable the MSS Clamping as described in
-            the LARTC Howto. Please read the appropriate section of the
-            Howto for further information.
+            With this, you can enable the MSS Clamping as described in the
+            LARTC Howto. Please read the appropriate section of the Howto for
+            further information.
+          + HTB_MPU:
+            Use MPU for HTB. From the LARTC Howto on MPU: "A zero-sized
+            packet does not use zero bandwidth. For ethernet, no packet uses
+            less than 64 bytes. The Minimum Packet Unit determines the
+            minimal token usage for a packet." This feature requires a
+            patched tc binary. This binary is included in the package. Go to
+            the official HTB homepage if you want to patch it yourself (can
+            be troublesome). Download both HTB and MPU patches there.
+          + HTB_OVERHEAD:
+            Per-packet size overhead used in HTB's rate computations.
+            According to the HTB page, "overhead implementation is a bit
+            hack", but I guess that's why this is in the Hacks section of my
+            script. ;-)
      * Binaries
           + BIN_TC:
-            You need a HTB-enabled tc binary to use this script. Per
-            default, the script looks for binaries called 'tc-htb' or
-            'tc'. If it has another name on your machine, set it here.
-            Per default, the first binary found on your $PATH (returned
-            by 'which binary') is used.
+            You need a HTB-enabled tc binary to use this script. Per default,
+            the script looks for binaries called 'tc-htb' or 'tc'. If it has
+            another name on your machine, set it here. Per default, the first
+            binary found on your $PATH (returned by 'which binary') is used.
           + BIN_IPT:
             iptables
           + BIN_IFC:
@@ -245,94 +259,99 @@
   Command line arguments
 
    Currently, the following arguments are understood:
-     * stop: Resets IPTables and Traffic Shaping to zero.
-     * info: Shows information about your current configuration.
-     * <config-file>: This file will be used instead of the default
-       configuration file. Please note that if you use this feature, you
-       have to specify the file when using the stop and info parameters
-       too. (It's probably easier to change the FAIRNAT_CONFIG variable
-       directly in the script)
+     * help:
+       Gives a short overview over the available command line options.
+     * version:
+       Prints the version of your script.
+     * stop:
+       Resets IPTables and Traffic Shaping to zero.
+     * info:
+       Shows information about your current configuration.
+     * <config-file>:
+       This file will be used instead of the default configuration file.
+       Please note that if you use this feature, you have to specify the file
+       when using the stop and info parameters too. (It's probably easier to
+       change the FAIRNAT_CONFIG variable directly in the script)
 
   IPP2P support (EXPERIMENTAL)
 
    Let me add some notes about the IPP2P support introduced in Fair NAT
-   v0.72. IPP2P provides a (more or less) reliable means to detect
-   traffic of peer-to-peer (filesharing) applications. To use it, you
-   first have to patch the kernel and the iptables program. You can get
-   the patches at the Official IPP2P Homepage along with plenty
-   documentation. When that's done, you have to enable IPP2P in the Fair
-   NAT configuration file, too. See the example configuration file for
-   details.
+   v0.72. IPP2P provides a (more or less) reliable means to detect traffic of
+   peer-to-peer (filesharing) applications. To use it, you first have to
+   patch the kernel and the iptables program. You can get the patches at the
+   Official IPP2P Homepage along with plenty documentation. When that's done,
+   you have to enable IPP2P in the Fair NAT configuration file, too. See the
+   example configuration file for details.
 
-   Please note that IPP2P also requires the CONNMARK patch, unless you
-   intend to drop all P2P packets in general. Applying this patch can be
-   a pain in the ..., it took me several days to do it properly. If you
-   use the newest version of the CONNMARK patch, you also need a new
-   version of iptables - at least version 1.2.10 (at the moment, you need
-   iptables-cvs). Otherwise CONNMARK won't work - you'll get an 'Invalid
-   Argument' error. Another solution would be using an OLD version of the
-   CONNMARK patch, but I haven't found any that worked together with
-   kernel 2.4.26 so far. The patch is part of patch-o-matic-ng which you
-   can get on the Official Netfilter Homepage .
+   Please note that IPP2P also requires the CONNMARK patch, unless you intend
+   to drop all P2P packets in general. Applying this patch can be a pain in
+   the ..., it took me several days to do it properly. If you use the newest
+   version of the CONNMARK patch, you also need a new version of iptables -
+   at least version 1.2.10 (at the moment, you need iptables-cvs). Otherwise
+   CONNMARK won't work - you'll get an 'Invalid Argument' error. Another
+   solution would be using an OLD version of the CONNMARK patch, but I
+   haven't found any that worked together with kernel 2.4.26 so far. The
+   patch is part of patch-o-matic-ng which you can get on the Official
+   Netfilter Homepage .
 
    If IPP2P is enabled, Fair NAT uses it like this. If P2P traffic is
-   forbidden in general, all packets recognized by IPP2P are dropped. End
-   of story. Bye bye. However, if P2P traffic is allowed, Fair NAT does
-   the following:
+   forbidden in general, all packets recognized by IPP2P are dropped. End of
+   story. Bye bye. However, if P2P traffic is allowed, Fair NAT does the
+   following:
      * Mark and remember all P2P connections using CONNMARK.
      * Mark all packets of P2P-marked connections
      * Use 4 instead of 3 prio bands per user.
      * If a packet is marked as P2P, use $USER_MARK+1 as new package mark
        instead of $USER_MARK
-     * Put all $USER_MARK+1 packages into prio band 4. Bands 1-3 still
-       depend on TOS.
+     * Put all $USER_MARK+1 packages into prio band 4. Bands 1-3 still depend
+       on TOS.
 
    This way, P2P traffic is not limited at all, but gets an even lower
-   priority than HTTP traffic or FTP transfers. If you don't know what
-   all this marking stuff is, don't bother. It's just the identifier that
-   tells the Traffic Shaping mechanism which packet belongs to which
-   user.
+   priority than HTTP traffic or FTP transfers. If you don't know what all
+   this marking stuff is, don't bother. It's just the identifier that tells
+   the Traffic Shaping mechanism which packet belongs to which user.
 
   Download
 
    The script can be found here: (newest version recommended)
+     * fairnat-0.75 (Added HTB hacks: HTB_MPU and HTB_OVERHEAD. These require
+       a special tc patch available from the HTB homepage. I included an
+       already patched tc-htb binary into the package.)
      * fairnat-0.74 (New config options BORROW, IPP2P_DROP_MARKED,
        CLASS_MODE, CLAMP_MSS)
      * fairnat-0.73 (Bugfix: user upload rates were totally boggled which
        caused traffic to be dropped instead of being shaped correctly.)
      * fairnat-0.72 (minor bugfixes, experimental IPP2P support)
-     * fairnat-0.71 (Class numbers are now derived from user IP instead
-       of array index. This makes it much easier to read class-based
-       statistics. Thanks to Udo for the suggestion.)
-     * fairnat-0.70 (User grouping allows multiple IPs per user. Thanks
-       to Tomasz for the suggestion. Added command line arguments stop,
-       info, <config-file>)
+     * fairnat-0.71 (Class numbers are now derived from user IP instead of
+       array index. This makes it much easier to read class-based statistics.
+       Thanks to Udo for the suggestion.)
+     * fairnat-0.70 (User grouping allows multiple IPs per user. Thanks to
+       Tomasz for the suggestion. Added command line arguments stop, info,
+       <config-file>)
      * fairnat-0.69
      * fairnat-0.68
 
    Please take the time to read the comments directly in the script,
-   especially in the sample configuration file, too. I tried to add loads
-   of comments in case you want to modify some parts of the script.
+   especially in the sample configuration file, too. I tried to add loads of
+   comments in case you want to modify some parts of the script.
 
   Contact
 
-   If you find bugs, please report them. If you have ideas for
-   improvements, please tell me. If you need more features, ask me to
-   implement them. If you decide to (not) use the script, drop me a note.
-   If the script works particularly well (or bad) for you, I want to hear
-   about it. If you can't get it to work, I'll see what I can do to help
-   you. No, really. Give me some feedback. I'm tired of having nothing
-   but spam in my mailbox. Thanks.
+   If you find bugs, please report them. If you have ideas for improvements,
+   please tell me. If you need more features, ask me to implement them. If
+   you decide to (not) use the script, drop me a note. If the script works
+   particularly well (or bad) for you, I want to hear about it. If you can't
+   get it to work, I'll see what I can do to help you. No, really. Give me
+   some feedback. I'm tired of having nothing but spam in my mailbox. Thanks.
 
    My mail address is: Andreas.Klauer@metamorpher.de
 
   Credits
 
-   Thanks to all those people who helped me write this script. Special
-   thanks to the authors of the LARTC Howto and the people on the LARTC
-   mailing list. And of course to Stef Coene for his great Docum page.
-   Thanks to everyone who sent me bug reports, suggestions, feature
-   requests and so on.
+   Thanks to all those people who helped me write this script. Special thanks
+   to the authors of the LARTC Howto and the people on the LARTC mailing
+   list. And of course to Stef Coene for his great Docum page. Thanks to
+   everyone who sent me bug reports, suggestions, feature requests and so on.
 
   TODO
 
@@ -340,12 +359,24 @@
      * Make IPP2P support more powerful.
      * Read mailing lists, kernel changelog and other scripts in order to
        find hints for new, better methods and other improvements.
-     _________________________________________________________________
+     * Probably support for multiple subnets, IPs, LAN and Internet devices,
+       link sharing and so on. But I don't have all this, so even if I'd
+       implement it, I couldn't test it.
+     _____________________________________________________________________
 
   Other projects
 
+     * tc-graph.pl : Inspired by Stef Coene's show.pl , I wrote this script.
+       It generates GraphViz .dot files (see http://www.graphviz.org for
+       details on GraphViz) from tc-output. You can use it to create
+       qdisc/class/filter structure visualizations like this one. It should
+       be able to show any qdisc/class properly, but it's still bad with
+       filters; it's really hard to parse output for matches etc, so only
+       mark filters are supported so far.
      * burn-dvd-image.sh : Simple script that uses a combination of
-       growisofs, pipebuf and nice to make high speed DVD image burning
-       under heavy load conditions possible. If you use growisofs, and
-       experience speed breakdowns (reported writing speed is not
-       constant), this is probably the right script for you.
+       growisofs, pipebuf and nice to make high speed DVD image burning under
+       heavy load conditions possible. If you use growisofs, and experience
+       speed breakdowns (reported writing speed is not constant), this is
+       probably the right script for you.
+
+SOURCE: http://www.metamorpher.de/fairnat/

@@ -6,10 +6,10 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      0.74 (2004-05-12 00:08)
+# Version:      v0.75 (2004-05-12 00:08)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
-#               before the internet connection is dialup and ready
+#               before the internet connection is available (for dialup users)
 # Kernel:       I run this script on a modified 2.4.26 kernel.
 #               Modifications in detail:
 #                 - TTL patch to modify TTL of outgoing packets
@@ -101,6 +101,8 @@ function configure
 
 # Hacks
     MSS_CLAMPING=0
+    HTB_MPU=0
+    HTB_OVERHEAD=0
 
 # Now that all variables have default values set, replace the ones
 # defined by the user in the configuration file:
@@ -146,6 +148,17 @@ function configure
 # and I'm too lazy to implement hexadecimal notation, using values >= 40 may
 # lead to weird error messages.
     MARK_OFFSET=10
+
+# Hacks:
+    if [ $HTB_MPU != 0 ];
+    then
+        HTB_OPT="$HTB_OPT mpu $HTB_MPU"
+    fi
+
+    if [ $HTB_OVERHEAD != 0 ];
+    then
+        HTB_OPT="$HTB_OPT overhead $HTB_OVERHEAD"
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -329,27 +342,18 @@ function parent_class_default
     PC_LOCAL_RATE=$5
     PC_LOCAL_CEIL=$6
 
-    # Ingress policy. Drop anything that comes in too fast.
-    # FIXME:  Something's wrong with this ingress rule.
-    # FIXME:: It gives really, really bad rates to all users.
-    # FIXME:: Haven't got a clue how to do this right atm...
-#    $BIN_TC qdisc add dev $PC_DEV handle ffff: ingress
-#    $BIN_TC filter add dev $PC_DEV parent ffff: protocol ip u32 \
-#                   match ip src 0.0.0.0/0 police rate $(($PC_RATE))bps \
-#                   burst 10k drop flowid :1
-
     # Root QDisc:
     $BIN_TC qdisc add dev $PC_DEV root handle 1: htb default 3
 
     # Main (fat) device class:
     $BIN_TC class add dev $PC_DEV parent 1: classid 1:2 \
                   htb rate $(($PC_RATE))bps ceil $(($PC_RATE))bps \
-                  quantum $DEV_NET_MTU
+                  quantum $DEV_NET_MTU $HTB_OPT
 
     # Local traffic class with lower prio:
     $BIN_TC class add dev $PC_DEV parent 1:2 classid 1:3 \
                   htb rate $(($PC_LOCAL_RATE))bps ceil $(($PC_LOCAL_CEIL))bps \
-                  quantum $DEV_NET_MTU prio 5
+                  quantum $DEV_NET_MTU $HTB_OPT prio 5
 
     # Put PRIO and SFQ on top of local traffic class:
     $BIN_TC qdisc add dev $PC_DEV parent 1:3 handle 2: prio
@@ -360,7 +364,7 @@ function parent_class_default
     # Parent class for user classes:
     $BIN_TC class add dev $PC_DEV parent 1:2 classid 1:1 \
                   htb rate $(($PC_USER_RATE))bps ceil $(($PC_USER_CEIL))bps \
-                  quantum $DEV_NET_MTU
+                  quantum $DEV_NET_MTU $HTB_OPT
 }
 
 # Wondershaper uses the default parent class structure.
@@ -412,7 +416,7 @@ function user_class_default
 # Add HTB class:
     $BIN_TC class add dev $UC_DEV parent 1:1 classid 1:$UC_MARK \
                   htb rate $(($UC_RATE))bps ceil $(($UC_CEIL))bps \
-                  quantum $DEV_NET_MTU
+                  quantum $DEV_NET_MTU $HTB_OPT
 
 # Add PRIO qdisc on top of HTB:
     if [ $IPP2P_ENABLE == 0 -o $IPP2P_DROP_ALL == 1 ];
@@ -430,7 +434,7 @@ function user_class_default
         $BIN_TC qdisc add dev $UC_DEV parent 1:$UC_MARK handle $UC_MARK: prio \
                           bands 4
 
-# Add a filter for IPP2P to this class. The rest depends on TOS.
+# Add a filter for IPP2P to this qdisc. The rest depends on TOS.
         $BIN_TC filter add dev $UC_DEV parent $UC_MARK: protocol ip \
                        handle $(($UC_MARK+1)) fw flowid $UC_MARK:4
 
@@ -467,7 +471,7 @@ function user_class_wonder
 # Add HTB class:
     $BIN_TC class add dev $UC_DEV parent 1:1 classid 1:$UC_MARK \
                   htb rate $(($UC_RATE))bps ceil $(($UC_CEIL))bps \
-                  quantum $DEV_NET_MTU
+                  quantum $DEV_NET_MTU $HTB_OPT
 
 # Wonder-Shaper classes are following:
 
@@ -475,10 +479,10 @@ function user_class_wonder
 
     $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+1)) \
                   htb rate $(($UC_CEIL))bps burst 6k prio 1 \
-                  quantum $DEV_NET_MTU
+                  quantum $DEV_NET_MTU $HTB_OPT
     $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+2)) \
                   htb rate $((9*$UC_CEIL/10))bps burst 6k prio 2 \
-                  quantum $DEV_NET_MTU
+                  quantum $DEV_NET_MTU $HTB_OPT
 
 # all get Stochastic Fairness:
     $BIN_TC qdisc add dev $UC_DEV parent 1:$(($UC_MARK+1)) handle $(($UC_MARK+1)): \
@@ -519,7 +523,7 @@ function user_class_wonder
     then
         $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+3)) \
                       htb rate $((8*$UC_CEIL/10))bps burst 6k prio 3 \
-                      quantum $DEV_NET_MTU
+                      quantum $DEV_NET_MTU $HTB_OPT
         $BIN_TC qdisc add dev $UC_DEV parent 1:$(($UC_MARK+3)) handle $(($UC_MARK+3)): \
                       sfq perturb 10
         $BIN_TC filter add dev $UC_DEV parent 1: prio 1 \
@@ -766,7 +770,7 @@ do
                 ;;
 
         version)
-                echo "Fair NAT v0.74"
+                echo "Fair NAT v0.75 maintained by <Andreas.Klauer@metamorpher.de>."
                 exit 0
                 ;;
 
@@ -801,7 +805,9 @@ do
                 echo "IPP2P_DROP_ALL:    $IPP2P_DROP_ALL"
                 echo "IPP2P_DROP_MARKED: $IPP2P_DROP_MARKED"
                 echo "--- HACKS ---"
-                echo "MSS_CLAMPING:      $MSS_CLAMPING"
+                echo "MSS_CLAMPING: $MSS_CLAMPING"
+                echo "HTB_MPU:      $HTB_MPU"
+                echo "HTB_OVERHEAD: $HTB_OVERHEAD"
                 echo "--- BINARIES ---"
                 echo "iptables: $BIN_IPT"
                 echo "tc:       $BIN_TC"

@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      0.73
+# Version:      0.74 (2004-05-12 00:08)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is dialup and ready
@@ -63,6 +63,12 @@ function configure
 
 # System settings:
     BIN_TC=`which tc-htb`
+
+    if [ "$BIN_TC" == "" ];
+    then
+        BIN_TC=`which tc`
+    fi
+
     BIN_IPT=`which iptables`
     BIN_IFC=`which ifconfig`
     BIN_GREP=`which grep`
@@ -77,6 +83,8 @@ function configure
 # User settings:
     USERS="1 2 3"
     PORTS=""
+    CLASS_MODE="default"
+    BORROW=1
 
 # Internet settings:
     DEV_NET=ppp0
@@ -88,7 +96,11 @@ function configure
 # IPP2P support (experimental)
     IPP2P_ENABLE=0
     IPP2P_DROP_ALL=0
+    IPP2P_DROP_MARKED=0
     IPP2P_OPTIONS="--ipp2p --apple --bit"
+
+# Hacks
+    MSS_CLAMPING=0
 
 # Now that all variables have default values set, replace the ones
 # defined by the user in the configuration file:
@@ -194,6 +206,10 @@ function modules
 # -----------------------------------------------------------------------------
 function iptables
 {
+    $BIN_IPT -t mangle -A PREROUTING -p tcp -d 192.69.221.130 -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp -s 192.69.221.130 -j TOS --set-tos Minimize-Delay
+
+
 # 1: TTL generally set to 64, because different TTL values is a dead giveaway
 #    that there are multiple machines behind the router.
 #    Requires Kernel-TTL-Patch.
@@ -201,15 +217,15 @@ function iptables
 
 # 2: Set TOS for several stuff.
 # TODO: Anything missing here? Tell me about it.
-    $BIN_IPT -A PREROUTING -t mangle -p icmp -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport telnet -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport ssh -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport ftp -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport ftp-data -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --dport telnet -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --dport ssh -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --dport ftp -j TOS --set-tos Minimize-Delay
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --dport ftp-data -j TOS --set-tos Maximize-Throughput
+    $BIN_IPT -t mangle -A PREROUTING -p icmp -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport telnet -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport ssh -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport ftp -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --sport ftp-data -j TOS --set-tos Maximize-Throughput
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport telnet -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport ssh -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport ftp -j TOS --set-tos Minimize-Delay
+    $BIN_IPT -t mangle -A PREROUTING -p tcp --dport ftp-data -j TOS --set-tos Maximize-Throughput
 
 # 3: Correcting TOS for large packets with Minimize-Delay-TOS
     $BIN_IPT -t mangle -N CHK_TOS
@@ -228,13 +244,27 @@ function iptables
     $BIN_IPT -t mangle -A ACK_TOS -j RETURN
     $BIN_IPT -t mangle -A PREROUTING -p tcp -m tcp --tcp-flags SYN,RST,ACK ACK -j ACK_TOS
 
-# 5: IPP2P support (experimental)
+# 5: Hacks.
+    # Read about MSS Clamping in the LARTC Howto.
+    if [ "$MSS_CLAMPING" != "0" ];
+    then
+        $BIN_IPT -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS $MSS_CLAMPING
+    fi
+
+# 6: IPP2P support (experimental)
     if [ $IPP2P_ENABLE == 1 ];
     then
         if [ $IPP2P_DROP_ALL == 1 ];
         then
 # P2P traffic should be forbidden in general.
             $BIN_IPT -A FORWARD -p tcp -m ipp2p $IPP2P_OPTIONS -j DROP
+
+            if [ $IPP2P_DROP_MARKED == 1 ];
+            then
+# Drop previously marked connections, too.
+                $BIN_IPT -t mangle -A PREROUTING -p tcp -j CONNMARK --restore-mark
+                $BIN_IPT -t mangle -A PREROUTING -p tcp -m mark --mark 1 -j DROP
+            fi
         else
 # P2P should be allowed, but with low prio.
 
@@ -248,19 +278,96 @@ function iptables
 # Let all TCP packets run through the IPP2P chain:
             $BIN_IPT -t mangle -A PREROUTING -p tcp -j IPP2PMARK
 
-# Create new chain for IPP2P packets:
-            $BIN_IPT -t mangle -N IPP2P
-            $BIN_IPT -t mangle -A IPP2P -j TOS --set-tos Maximize-Throughput
-
-# Throw all marked IPP2P packets through the IPP2PMARK chain:
-            $BIN_IPT -t mangle -A PREROUTING -m mark --mark 1 -j IPP2P
-
 # NOTE: The mark will be modified again later in the user rules.
         fi
     fi
 # End of experimental IPP2P support.
 }
 # End of iptables.
+
+# -----------------------------------------------------------------------------
+# FUNCTION:    parent_class(dev, rate, user_rate, user_ceil, local_rate, local_ceil)
+# DESCRIPTION:
+#   This function sets up the parent qdisc / class / filter structure.
+#   In short, it does everything that does not depend on users.
+#
+#   Parameters:
+#
+#   dev:         The device to attach the parent qdisc/class structure to.
+#   rate:        The maximum rate the device can do.
+#   user_rate:   The rate that should be reserved for users.
+#   user_ceil:   The maximum rate users should be allowed to use.
+#   local_rate:  The rate that should be reserved for local traffic.
+#   local_ceil:  The maximum rate that the local box should be allowed to use.
+#
+#   The default function creates this structure:
+#
+#   HTB qdisc
+#    |
+#    \--- 1:2 Main HTB class ($dev_rate $dev_rate), default 3
+#          |
+#          \--- 1:3 Local class ($local_rate $dev_rate)
+#          \--- 1:1 User class ($net_rate $dev_rate)
+#
+#   The function user_class will later add further child classes to 1:1.
+#
+#   If you want a different class structure, you can replace this function
+#   by writing a new one (parent_class_foobar). Set CLASS_MODE to "foobar"
+#   in fairnat.config and your function will be used instead of the default
+#   one. You also need a user_class_foobar function then. Look below for
+#   some examples.
+#
+# SEE ALSO:    user_class
+# -----------------------------------------------------------------------------
+
+function parent_class_default
+{
+    PC_DEV=$1
+    PC_RATE=$2
+    PC_USER_RATE=$3
+    PC_USER_CEIL=$4
+    PC_LOCAL_RATE=$5
+    PC_LOCAL_CEIL=$6
+
+    # Ingress policy. Drop anything that comes in too fast.
+    # FIXME:  Something's wrong with this ingress rule.
+    # FIXME:: It gives really, really bad rates to all users.
+    # FIXME:: Haven't got a clue how to do this right atm...
+#    $BIN_TC qdisc add dev $PC_DEV handle ffff: ingress
+#    $BIN_TC filter add dev $PC_DEV parent ffff: protocol ip u32 \
+#                   match ip src 0.0.0.0/0 police rate $(($PC_RATE))bps \
+#                   burst 10k drop flowid :1
+
+    # Root QDisc:
+    $BIN_TC qdisc add dev $PC_DEV root handle 1: htb default 3
+
+    # Main (fat) device class:
+    $BIN_TC class add dev $PC_DEV parent 1: classid 1:2 \
+                  htb rate $(($PC_RATE))bps ceil $(($PC_RATE))bps \
+                  quantum $DEV_NET_MTU
+
+    # Local traffic class with lower prio:
+    $BIN_TC class add dev $PC_DEV parent 1:2 classid 1:3 \
+                  htb rate $(($PC_LOCAL_RATE))bps ceil $(($PC_LOCAL_CEIL))bps \
+                  quantum $DEV_NET_MTU prio 5
+
+    # Put PRIO and SFQ on top of local traffic class:
+    $BIN_TC qdisc add dev $PC_DEV parent 1:3 handle 2: prio
+    $BIN_TC qdisc add dev $PC_DEV parent 2:1 handle 3: sfq perturb 9
+    $BIN_TC qdisc add dev $PC_DEV parent 2:2 handle 4: sfq perturb 10
+    $BIN_TC qdisc add dev $PC_DEV parent 2:3 handle 5: sfq perturb 11
+
+    # Parent class for user classes:
+    $BIN_TC class add dev $PC_DEV parent 1:2 classid 1:1 \
+                  htb rate $(($PC_USER_RATE))bps ceil $(($PC_USER_CEIL))bps \
+                  quantum $DEV_NET_MTU
+}
+
+# Wondershaper uses the default parent class structure.
+function parent_class_wonder
+{
+    parent_class_default $*
+}
 
 # -----------------------------------------------------------------------------
 # FUNCTION:    user_class(device, mark, rate, ceil)
@@ -278,13 +385,17 @@ function iptables
 #        \--- Interactive:  SFQ (to treat concurrenct connections fairly)
 #        \--- Normal:       SFQ
 #        \--- High-Traffic: SFQ
+#      [ \--- Filesharing:  SFQ (only if IPP2P is enabled) ]
 #
 #   However, it is possible to treat multiple IPs as a single user (if one
 #   guy got more than one machine). So, one user class does not necessarily
 #   serve just one IP. See example config file for details.
-# SEE ALSO:
+#
+# SEE ALSO:    parent_class
 # -----------------------------------------------------------------------------
-function user_class
+
+# The default structure, as described above.
+function user_class_default
 {
 # Make the positional parameters more readable.
 # Use UC_ prefix to make sure that these variables belong to User_Class.
@@ -337,6 +448,83 @@ function user_class
                       sfq perturb 10
     $BIN_TC qdisc add dev $UC_DEV parent $UC_MARK:3 handle $(($UC_MARK+3)): \
                       sfq perturb 11
+}
+
+function user_class_wonder
+{
+# Make the positional parameters more readable.
+# Use UC_ prefix to make sure that these variables belong to User_Class.
+    UC_DEV=$1
+    UC_MARK=$2
+    UC_RATE=$3
+    UC_CEIL=$4
+
+# Add filter for this user.
+    $BIN_TC filter add dev $UC_DEV parent 1: protocol ip \
+                   handle $UC_MARK fw flowid 1:$UC_MARK
+
+
+# Add HTB class:
+    $BIN_TC class add dev $UC_DEV parent 1:1 classid 1:$UC_MARK \
+                  htb rate $(($UC_RATE))bps ceil $(($UC_CEIL))bps \
+                  quantum $DEV_NET_MTU
+
+# Wonder-Shaper classes are following:
+
+# high prio class 1:10:
+
+    $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+1)) \
+                  htb rate $(($UC_CEIL))bps burst 6k prio 1 \
+                  quantum $DEV_NET_MTU
+    $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+2)) \
+                  htb rate $((9*$UC_CEIL/10))bps burst 6k prio 2 \
+                  quantum $DEV_NET_MTU
+
+# all get Stochastic Fairness:
+    $BIN_TC qdisc add dev $UC_DEV parent 1:$(($UC_MARK+1)) handle $(($UC_MARK+1)): \
+                  sfq perturb 10
+    $BIN_TC qdisc add dev $UC_DEV parent 1:$(($UC_MARK+2)) handle $(($UC_MARK+2)): \
+                  sfq perturb 10
+
+# TOS Minimum Delay (ssh, NOT scp) in 1:10:
+
+    $BIN_TC filter add dev $UC_DEV parent 1:$UC_MARK protocol ip prio 10 \
+                   u32 match ip tos 0x10 0xff flowid 1:$(($UC_MARK+1))
+
+# ICMP (ip protocol 1) in the interactive class 1:10 so we
+# can do measurements & impress our friends:
+
+    $BIN_TC filter add dev $UC_DEV parent 1:$UC_MARK protocol ip prio 10 \
+                   u32 match ip protocol 1 0xff flowid 1:$(($UC_MARK+1))
+
+
+# To speed up downloads while an upload is going on, put ACK packets in
+# the interactive class:
+
+    $BIN_TC filter add dev $UC_DEV parent 1:$UC_MARK protocol ip prio 10 \
+                   u32 match ip protocol 6 0xff \
+                       match u8 0x05 0x0f at 0 \
+                       match u16 0x0000 0xffc0 at 2 \
+                       match u8 0x10 0xff at 33 \
+                       flowid 1:$(($UC_MARK+1))
+
+# Default: Put stuff in class 2.
+
+    $BIN_TC filter add dev $UC_DEV parent 1:$UC_MARK prio 100 \
+                   protocol ip handle $UC_MARK fw flowid 1:$(($UC_MARK+2))
+
+# In case of IPP2P: Put it in class 3.
+
+    if [ $IPP2P_ENABLE == 1 -a $IPP2P_DROP_ALL == 0 ];
+    then
+        $BIN_TC class add dev $UC_DEV parent 1:$UC_MARK classid 1:$(($UC_MARK+3)) \
+                      htb rate $((8*$UC_CEIL/10))bps burst 6k prio 3 \
+                      quantum $DEV_NET_MTU
+        $BIN_TC qdisc add dev $UC_DEV parent 1:$(($UC_MARK+3)) handle $(($UC_MARK+3)): \
+                      sfq perturb 10
+        $BIN_TC filter add dev $UC_DEV parent 1: prio 1 \
+                       protocol ip handle $(($UC_MARK+1)) fw flowid 1:$(($UC_MARK+3))
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -397,6 +585,9 @@ function forward
 # Add IPTables rules for DNAT:
     $BIN_IPT -t nat -A PREROUTING -i $DEV_NET -p tcp --dport $PORT -j DNAT --to-destination $F_IP
     $BIN_IPT -t nat -A PREROUTING -i $DEV_NET -p udp --dport $PORT -j DNAT --to-destination $F_IP
+
+# Marking these packets:
+
 }
 
 # -----------------------------------------------------------------------------
@@ -444,9 +635,6 @@ function stop_fairnat
     $BIN_ECHO 1 > /proc/sys/net/ipv4/ip_forward
     $BIN_ECHO 1 > /proc/sys/net/ipv4/ip_dynaddr
     $BIN_ECHO 1 > /proc/sys/net/ipv4/tcp_syncookies
-    $BIN_ECHO 1 > /proc/sys/net/ipv4/conf/eth0/rp_filter
-    $BIN_ECHO 1 > /proc/sys/net/ipv4/conf/eth1/rp_filter
-    $BIN_ECHO 1 > /proc/sys/net/ipv4/conf/ppp0/rp_filter
 }
 
 # -----------------------------------------------------------------------------
@@ -471,52 +659,20 @@ function start_fairnat
 
 # --- Traffic Shaping: ---
 
-# Ingress policy. Drop anything that comes in too fast.
-    $BIN_TC qdisc add dev $DEV_NET handle ffff: ingress
-    $BIN_TC filter add dev $DEV_NET parent ffff: protocol ip prio 50 u32 \
-            match ip src 0.0.0.0/0 police rate $(($RATE_DOWN))bps burst 20k \
-            drop flowid :1
+# User independent class structure for DEV_NET:
+    parent_class_$CLASS_MODE $DEV_NET $RATE_UP \
+        $(($RATE_USER_UP*$NUM_USERS)) $RATE_UP \
+        $RATE_LOCAL_UP $RATE_UP
 
-# Just to make sure that Clients can't overflood the Router, same for LAN.
-    $BIN_TC qdisc add dev $DEV_LAN handle ffff: ingress
-    $BIN_TC filter add dev $DEV_LAN parent ffff: protocol ip prio 50 u32 \
-            match ip src 0.0.0.0/0 police rate $(($RATE_LAN))bps burst 20k \
-            drop flowid :1
+# User independent class structure for DEV_LAN:
+    parent_class_$CLASS_MODE $DEV_LAN $RATE_LAN \
+        $(($RATE_USER_DOWN*$NUM_USERS)) $RATE_DOWN \
+        $(($RATE_LAN-($RATE_USER_DOWN*$NUM_USERS))) $RATE_LAN
 
-# Root QDisc and parent class for internet device:
-    $BIN_TC qdisc add dev $DEV_NET root handle 1: htb default 2
-    $BIN_TC class add dev $DEV_NET parent 1: classid 1:1 htb \
-                      rate $(($RATE_UP))bps ceil $(($RATE_UP))bps \
-                      quantum $DEV_NET_MTU
-
-# Class for local upload. This class gets a lower prio.
-    $BIN_TC class add dev $DEV_NET parent 1:1 classid 1:2 htb \
-                      rate $(($RATE_LOCAL_UP))bps ceil $(($RATE_UP))bps \
-                      quantum $DEV_NET_MTU prio 3
-
-
-# Root QDisc and parent class for LAN device:
-    $BIN_TC qdisc add dev $DEV_LAN root handle 1: htb default 3
-
-# We put a fat class on top here for local LAN traffic that does not
-# go to or come from the internet. This fat class gets two children:
-# one for the download traffic and one for the local LAN traffic.
-    $BIN_TC class add dev $DEV_LAN parent 1: classid 1:2 htb \
-                      rate $(($RATE_LAN))bps ceil $(($RATE_LAN))bps \
-                      quantum $DEV_NET_MTU
-
-# The download class as a child of the fat class:
-    $BIN_TC class add dev $DEV_LAN parent 1:2 classid 1:1 htb \
-                      rate $(($RATE_DOWN))bps ceil $(($RATE_DOWN))bps \
-                      quantum $DEV_NET_MTU
-
-# The local class as a child of the fat class with lower prio to boot:
-    $BIN_TC class add dev $DEV_LAN parent 1:2 classid 1:3 htb \
-                      rate $(($RATE_LAN-$RATE_DOWN))bps \
-                      ceil $(($RATE_LAN-$RATE_DOWN))bps \
-                      quantum $DEV_NET_MTU prio 3
-
-# User classes will be created below.
+# Please see parent_class documentation above for explanation of the parameters
+# the first line gives the function name, the device and the device rate
+# the second line gives user rate and user ceil
+# the third line gives local rate and local ceil.
 
 # --- Fair NAT: ---
 
@@ -536,8 +692,14 @@ function start_fairnat
         MARK=$(($MARK*$MARK_OFFSET));
 
 # Create classes for this user:
-        user_class $DEV_NET $MARK $RATE_USER_UP $RATE_UP
-        user_class $DEV_LAN $MARK $RATE_USER_DOWN $RATE_DOWN
+        if [ $BORROW == 1 ];
+        then
+            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_UP
+            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_DOWN
+        else
+            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_USER_UP
+            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_USER_DOWN
+        fi
 
 # If a user has more than one IP, get the single IPs now.
 # This sed converts "5:6:7" to "5 6 7".
@@ -594,23 +756,39 @@ fi
 for arg in $*
 do
     case "${arg}" in
+        help)
+                echo "usage: fairnat.sh [<file>] [info|stop|version]"
+                echo "       <file>:   alternative configuration file to use"
+                echo "       info:     give info about configuration file"
+                echo "       stop:     stop Fair NAT iptables + shaping rules"
+                echo "       version:  print version"
+                exit 0
+                ;;
+
+        version)
+                echo "Fair NAT v0.74"
+                exit 0
+                ;;
+
         stop)
 # The user wants us to stop fairnat and exit.
                 stop_fairnat
                 echo "Fair NAT stopped."
                 exit 0
                 ;;
+
         info)
 # Give some information about our config.
                 echo "--- LAN ---"
-                echo "DEV:       $DEV_LAN"
-                echo "IP:        $DEV_LAN_IP"
-                echo "SUBNET:    $DEV_LAN_SUBNET"
-                echo "RATE:      $RATE_LAN"
-                echo "USERS:     $USERS"
-                echo "NUM_USERS: $NUM_USERS"
-                echo "PORTS:     $PORTS"
-                echo "NUM_PORTS: $NUM_PORTS"
+                echo "DEV:        $DEV_LAN"
+                echo "IP:         $DEV_LAN_IP"
+                echo "SUBNET:     $DEV_LAN_SUBNET"
+                echo "RATE:       $RATE_LAN"
+                echo "USERS:      $USERS"
+                echo "NUM_USERS:  $NUM_USERS"
+                echo "PORTS:      $PORTS"
+                echo "NUM_PORTS:  $NUM_PORTS"
+                echo "CLASS_MODE: $CLASS_MODE"
                 echo "--- NET ---"
                 echo "DEV:              $DEV_NET"
                 echo "IP:               $DEV_NET_IP"
@@ -619,8 +797,19 @@ do
                 echo "RATE_DOWN:        $RATE_DOWN ($RATE_USER_DOWN per user)"
                 echo "RATE_LOCAL_UP:    $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
                 echo "--- IPP2P ---"
-                echo "IPP2P_ENABLE:   $IPP2P_ENABLE"
-                echo "IPP2P_DROP_ALL: $IPP2P_DROP_ALL"
+                echo "IPP2P_ENABLE:      $IPP2P_ENABLE"
+                echo "IPP2P_DROP_ALL:    $IPP2P_DROP_ALL"
+                echo "IPP2P_DROP_MARKED: $IPP2P_DROP_MARKED"
+                echo "--- HACKS ---"
+                echo "MSS_CLAMPING:      $MSS_CLAMPING"
+                echo "--- BINARIES ---"
+                echo "iptables: $BIN_IPT"
+                echo "tc:       $BIN_TC"
+                echo "ifconfig: $BIN_IFC"
+                echo "grep:     $BIN_GREP"
+                echo "sed:      $BIN_SED"
+                echo "echo:     $BIN_ECHO"
+                echo "modprobe: $BIN_MODPROBE"
                 exit 0
                 ;;
     esac

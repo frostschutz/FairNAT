@@ -53,3 +53,15 @@
   User upload rates were not calculated correctly (rate was set far
   too high, even heigher than ceil) since v0.69 and nobody noticed.
   This bug caused a lot of unnecessary packet drops.
+---- 2004-05-12 ---- v0.74 ---- Andreas Klauer ----
+  Improved 'tc' binary detection. Now looks for both tc-htb and tc.
+  Moved code from start_fairnat to new function parent_class for easier
+  class structure (shaping method) replacement. Normalized iptables calls.
+
+  New features to be enabled in the config file:
+    - Turn bandwidth borrowing/lending off. (BORROW)
+    - MSS Clamping hack. (MSS_CLAMP)
+    - Drop previously marked IPP2P connections. (IPP2P_DROP_MARKED)
+    - Use different class structures. (CLASS_MODE)
+
+  Added 'Wondershaper'-alike class structure (CLASS_MODE="wonder").

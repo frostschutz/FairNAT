@@ -1,0 +1,13 @@
+diff -ruN linux-2.4.26-orig/include/net/pkt_sched.h linux-2.4.26/include/net/pkt_sched.h
+--- linux-2.4.26-orig/include/net/pkt_sched.h   Wed Feb 18 14:36:32 2004
++++ linux-2.4.26/include/net/pkt_sched.h        Sat May  8 01:08:44 2004
+@@ -5,7 +5,7 @@
+ #define PSCHED_JIFFIES                 2
+ #define PSCHED_CPU             3
+
+-#define PSCHED_CLOCK_SOURCE    PSCHED_JIFFIES
++#define PSCHED_CLOCK_SOURCE    PSCHED_CPU
+
+ #include <linux/config.h>
+ #include <linux/types.h>
+

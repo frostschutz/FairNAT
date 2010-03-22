@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      0.71 (2004-05-06 14:51)
+# Version:      0.72 (2004-05-08 17:07)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is dialup and ready
@@ -23,7 +23,7 @@
 #               scripts in general did give me some hints.
 #               Thanks to all those people mailing me about suggestions,
 #               feature requests and other stuff.
-# Modified:        See CHANGELOG
+# Modified:     See CHANGELOG
 #
 
 # TODO:  Download traffic is only shaped for clients, not for the router.
@@ -85,6 +85,11 @@ function configure
     RATE_SUB_PERCENT=5
     RATE_LOCAL_PERCENT=5
 
+# IPP2P support (experimental)
+    IPP2P_ENABLE=0
+    IPP2P_DROP_ALL=0
+    IPP2P_OPTIONS="--ipp2p --apple --bit"
+
 # Now that all variables have default values set, replace the ones
 # defined by the user in the configuration file:
     [ -f $C_CONFIG_FILE ] && source $C_CONFIG_FILE
@@ -125,7 +130,7 @@ function configure
 # MARK offset:
 # Makes sure that class names per user are unique. Leave this value alone
 # unless you really have to create 10 or more subclasses per user. Currently,
-# the script uses about 4. Since TC does not accept handles above 4 digits
+# the script uses about 5. Since TC does not accept handles above 4 digits
 # and I'm too lazy to implement hexadecimal notation, using values >= 40 may
 # lead to weird error messages.
     MARK_OFFSET=10
@@ -172,6 +177,12 @@ function modules
     $BIN_MODPROBE sch_sfq 2> /dev/null > /dev/null
     $BIN_MODPROBE sch_tbf 2> /dev/null > /dev/null
     $BIN_MODPROBE sch_teql 2> /dev/null > /dev/null
+
+#   Experimental IPP2P support:
+    if [ $IPP2P_ENABLE == 1 ];
+    then
+        $BIN_MODPROBE ipt_ipp2p 2> /dev/null > /dev/null
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -189,6 +200,8 @@ function iptables
     $BIN_IPT -t mangle -A PREROUTING -j TTL --ttl-set 64
 
 # 2: Set TOS for several stuff.
+# TODO: Anything missing here? Tell me about it.
+    $BIN_IPT -A PREROUTING -t mangle -p icmp -j TOS --set-tos Minimize-Delay
     $BIN_IPT -A PREROUTING -t mangle -p tcp --sport telnet -j TOS --set-tos Minimize-Delay
     $BIN_IPT -A PREROUTING -t mangle -p tcp --sport ssh -j TOS --set-tos Minimize-Delay
     $BIN_IPT -A PREROUTING -t mangle -p tcp --sport ftp -j TOS --set-tos Minimize-Delay
@@ -197,22 +210,6 @@ function iptables
     $BIN_IPT -A PREROUTING -t mangle -p tcp --dport ssh -j TOS --set-tos Minimize-Delay
     $BIN_IPT -A PREROUTING -t mangle -p tcp --dport ftp -j TOS --set-tos Minimize-Delay
     $BIN_IPT -A PREROUTING -t mangle -p tcp --dport ftp-data -j TOS --set-tos Maximize-Throughput
-
-# lowest priority for: Azureus/BitTorrent/P2P.
-# TODO:   This is bad. If there's any user who runs interactive
-# TODO::  (non-P2P) applications on these ports, he will suffer
-# TODO::  bad latency.
-# TODO::  Use some more reliable means (IPP2P for example) to detect
-# TODO::  such traffic. However, IPP2P seems to be currently broken
-# TODO::  for newer kernels, so I won't implement this soon.
-# TODO::  If it causes problems, remove it. Then only the users who
-# TODO::  actually use Azureus/Bittorrent will suffer...
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport 2800 -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport 40000: -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -A PREROUTING -t mangle -p udp --sport 2800 -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -A PREROUTING -t mangle -p udp --sport 40000: -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -A PREROUTING -t mangle -p tcp --sport 6800:7000 -j TOS --set-tos Maximize-Throughput
-    $BIN_IPT -A PREROUTING -t mangle -p udp --sport 6800:7000 -j TOS --set-tos Maximize-Throughput
 
 # 3: Correcting TOS for large packets with Minimize-Delay-TOS
     $BIN_IPT -t mangle -N CHK_TOS
@@ -230,7 +227,40 @@ function iptables
     $BIN_IPT -t mangle -A ACK_TOS -p tcp -m length --length 256: -j TOS --set-tos Maximize-Throughput
     $BIN_IPT -t mangle -A ACK_TOS -j RETURN
     $BIN_IPT -t mangle -A PREROUTING -p tcp -m tcp --tcp-flags SYN,RST,ACK ACK -j ACK_TOS
+
+# 5: IPP2P support (experimental)
+    if [ $IPP2P_ENABLE == 1 ];
+    then
+        if [ $IPP2P_DROP_ALL == 1 ];
+        then
+# P2P traffic should be forbidden in general.
+            $BIN_IPT -A FORWARD -p tcp -m ipp2p $IPP2P_OPTIONS -j DROP
+        else
+# P2P should be allowed, but with low prio.
+
+# Create a new chain for IPP2P connection marking:
+            $BIN_IPT -t mangle -N IPP2PMARK
+            $BIN_IPT -t mangle -A IPP2PMARK -j CONNMARK --restore-mark
+            $BIN_IPT -t mangle -A IPP2PMARK -m mark --mark 1 -j RETURN
+            $BIN_IPT -t mangle -A IPP2PMARK -p tcp -m ipp2p $IPP2P_OPTIONS -j MARK --set-mark 1
+            $BIN_IPT -t mangle -A IPP2PMARK -m mark --mark 1 -j CONNMARK --save-mark
+
+# Let all TCP packets run through the IPP2P chain:
+            $BIN_IPT -t mangle -A PREROUTING -p tcp -j IPP2PMARK
+
+# Create new chain for IPP2P packets:
+            $BIN_IPT -t mangle -N IPP2P
+            $BIN_IPT -t mangle -A IPP2P -j TOS --set-tos Maximize-Throughput
+
+# Throw all marked IPP2P packets through the IPP2PMARK chain:
+            $BIN_IPT -t mangle -A PREROUTING -m mark --mark 1 -j IPP2P
+
+# NOTE: The mark will be modified again later in the user rules.
+        fi
+    fi
+# End of experimental IPP2P support.
 }
+# End of iptables.
 
 # -----------------------------------------------------------------------------
 # FUNCTION:    user_class(device, mark, rate, ceil)
@@ -267,16 +297,40 @@ function user_class
     $BIN_TC filter add dev $UC_DEV parent 1: protocol ip \
                    handle $UC_MARK fw flowid 1:$UC_MARK
 
+
 # Add HTB class:
     $BIN_TC class add dev $UC_DEV parent 1:1 classid 1:$UC_MARK \
                   htb rate $(($UC_RATE))bps ceil $(($UC_CEIL))bps \
                   quantum $DEV_NET_MTU
 
-# Put Prio qdisc on top of HTB class:
-    $BIN_TC qdisc add dev $UC_DEV parent 1:$UC_MARK handle $UC_MARK: prio
-# This automatically creates 3 subclasses.
+# Add PRIO qdisc on top of HTB:
+    if [ $IPP2P_ENABLE == 0 -o $IPP2P_DROP_ALL == 1 ];
+    then
+# Default: IPP2P disabled. Create 3 bands.
+        $BIN_TC qdisc add dev $UC_DEV parent 1:$UC_MARK handle $UC_MARK: prio
+    else
+# Experimental IPP2P support:
 
-# Put SFQ qdisc on top of the 3 prio classes:
+# Add another filter to parent QDisc if IPP2P is active:
+        $BIN_TC filter add dev $UC_DEV parent 1: protocol ip \
+                       handle $(($UC_MARK+1)) fw flowid 1:$UC_MARK
+
+# Create a prio qdisc with 4 classes. All P2P traffic goes into class 4.
+        $BIN_TC qdisc add dev $UC_DEV parent 1:$UC_MARK handle $UC_MARK: prio \
+                          bands 4
+
+# Add a filter for IPP2P to this class. The rest depends on TOS.
+        $BIN_TC filter add dev $UC_DEV parent $UC_MARK: protocol ip \
+                       handle $(($UC_MARK+1)) fw flowid $UC_MARK:4
+
+# Add SFQ QDisc on 4th Prio band.
+        $BIN_TC qdisc add dev $UC_DEV parent $UC_MARK:4 handle $(($UC_MARK+4)): \
+                      sfq perturb 12
+
+# End of experimental IPP2P support
+    fi
+
+# Put SFQ qdisc on top of the prio classes:
     $BIN_TC qdisc add dev $UC_DEV parent $UC_MARK:1 handle $(($UC_MARK+1)): \
                       sfq perturb 9
     $BIN_TC qdisc add dev $UC_DEV parent $UC_MARK:2 handle $(($UC_MARK+2)): \
@@ -302,9 +356,27 @@ function fair_nat
 # Add IPTables rules for NAT:
     $BIN_IPT -t nat -A POSTROUTING -o $DEV_NET -s $FN_IP -j MASQUERADE
 
-# Add IPTables rules for Marking:
-    $BIN_IPT -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP -t mangle -j MARK --set-mark $MARK
-    $BIN_IPT -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP -t mangle -j MARK --set-mark $MARK
+# Mark packages (if IPP2P is disabled)
+    if [ $IPP2P_ENABLE == 0 -o $IPP2P_DROP_ALL == 1 ];
+    then
+        $BIN_IPT -t mangle -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
+                 -j MARK --set-mark $MARK
+        $BIN_IPT -t mangle -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
+                 -j MARK --set-mark $MARK
+
+# Mark packages (if IPP2P is enabled)
+# IPP2P packages will get MARK+1.
+# Too bad that there's no --add-mark, it would've made things so much easier.
+    else
+        $BIN_IPT -t mangle -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
+                 -m mark --mark 0 -j MARK --set-mark $MARK
+        $BIN_IPT -t mangle -A FORWARD -i $DEV_LAN -o $DEV_NET -s $FN_IP \
+                 -m mark --mark 1 -j MARK --set-mark $(($MARK+1))
+        $BIN_IPT -t mangle -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
+                 -m mark --mark 0 -j MARK --set-mark $MARK
+        $BIN_IPT -t mangle -A FORWARD -i $DEV_NET -o $DEV_LAN -d $FN_IP \
+                 -m mark --mark 1 -j MARK --set-mark $(($MARK+1))
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -369,12 +441,12 @@ function stop_fairnat
     $BIN_IPT -t mangle -X
 
 # reset other stuff
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-    echo 1 > /proc/sys/net/ipv4/ip_dynaddr
-    echo 1 > /proc/sys/net/ipv4/tcp_syncookies
-    echo 1 > /proc/sys/net/ipv4/conf/eth0/rp_filter
-    echo 1 > /proc/sys/net/ipv4/conf/eth1/rp_filter
-    echo 1 > /proc/sys/net/ipv4/conf/ppp0/rp_filter
+    $BIN_ECHO 1 > /proc/sys/net/ipv4/ip_forward
+    $BIN_ECHO 1 > /proc/sys/net/ipv4/ip_dynaddr
+    $BIN_ECHO 1 > /proc/sys/net/ipv4/tcp_syncookies
+    $BIN_ECHO 1 > /proc/sys/net/ipv4/conf/eth0/rp_filter
+    $BIN_ECHO 1 > /proc/sys/net/ipv4/conf/eth1/rp_filter
+    $BIN_ECHO 1 > /proc/sys/net/ipv4/conf/ppp0/rp_filter
 }
 
 # -----------------------------------------------------------------------------
@@ -390,6 +462,9 @@ function start_fairnat
 # Fair NAT only works if devices and iptables are 'clean'.
 # The function stop_fairnat takes care of that.
     stop_fairnat
+
+# Load some modules.
+    modules
 
 # --- Basic IPTables Setup: ---
     iptables
@@ -528,21 +603,24 @@ do
         info)
 # Give some information about our config.
                 echo "--- LAN ---"
-                echo "DEV:           $DEV_LAN"
-                echo "IP:            $DEV_LAN_IP"
-                echo "SUBNET:        $DEV_LAN_SUBNET"
-                echo "RATE:          $LAN_RATE"
-                echo "USERS:         $USERS"
-                echo "NUM_USERS:     $NUM_USERS"
-                echo "PORTS:         $PORTS"
-                echo "NUM_PORTS:     $NUM_PORTS"
+                echo "DEV:       $DEV_LAN"
+                echo "IP:        $DEV_LAN_IP"
+                echo "SUBNET:    $DEV_LAN_SUBNET"
+                echo "RATE:      $RATE_LAN"
+                echo "USERS:     $USERS"
+                echo "NUM_USERS: $NUM_USERS"
+                echo "PORTS:     $PORTS"
+                echo "NUM_PORTS: $NUM_PORTS"
                 echo "--- NET ---"
-                echo "DEV:           $DEV_NET"
-                echo "IP:            $DEV_NET_IP"
+                echo "DEV:              $DEV_NET"
+                echo "IP:               $DEV_NET_IP"
                 echo "RATE_SUB_PERCENT: $RATE_SUB_PERCENT"
-                echo "RATE_UP:       $RATE_UP ($RATE_USER_UP per user)"
-                echo "RATE_DOWN:     $RATE_DOWN ($RATE_USER_DOWN per user)"
-                echo "RATE_LOCAL_UP: $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
+                echo "RATE_UP:          $RATE_UP ($RATE_USER_UP per user)"
+                echo "RATE_DOWN:        $RATE_DOWN ($RATE_USER_DOWN per user)"
+                echo "RATE_LOCAL_UP:    $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
+                echo "--- IPP2P ---"
+                echo "IPP2P_ENABLE:   $IPP2P_ENABLE"
+                echo "IPP2P_DROP_ALL: $IPP2P_DROP_ALL"
                 exit 0
                 ;;
     esac

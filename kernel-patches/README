@@ -1,25 +1,4 @@
-Kernel patches (not made by me) I use together with Fair NAT script.
-The script will work without them - but I recommend using them.
-Check Fair NAT documentation for details.
+This directory contains kernel patches I use (mostly for better performance).
+No, they are all NOT made by me.
 
-If you're using newer 2.4 kernels and the patches do not work anymore,
-contact me. Since I'm using 2.4, I may have working ones for them.
-
-If you're using kernel 2.6, I'd happy to hear about wether Fair NAT
-works there or not in general. I have no patches for 2.6 at all,
-I don't even know if they're still required.
-
---- List of patches: ---
-ttl-2.4.18:     Adds TTL target support. Allows modifying of TTL
-                (time to live) value of outgoing packets.
-sfq:            Will reduce queue length to 16.
-psched:         Will use CPU timing instead of JIFFIES.
-                Probably fixes some accuracy issues.
-htb:            Disables HTB_HYSTERIES. May result in lower latency,
-                but slightly lower rates too.
-
----
-Note: All patches are optional. The script works without them,
-      although you may get an error message here or there.
-      I recommend using the patches since I get better performance with them.
-      However use them at your own risk only in any case.
+Please see the respictive .info files for more information on each patch.

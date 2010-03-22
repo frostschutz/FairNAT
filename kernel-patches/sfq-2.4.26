@@ -1,0 +1,13 @@
+diff -ruN linux-2.4.26-orig/net/sched/sch_sfq.c linux-2.4.26/net/sched/sch_sfq.c
+--- linux-2.4.26-orig/net/sched/sch_sfq.c       Wed Feb 18 14:36:32 2004
++++ linux-2.4.26/net/sched/sch_sfq.c    Sat May  8 01:09:28 2004
+@@ -88,7 +88,7 @@
+
+        It is easy to increase these values, but not in flight.  */
+
+-#define SFQ_DEPTH              128
++#define SFQ_DEPTH               16
+ #define SFQ_HASH_DIVISOR       1024
+
+ /* This type should contain at least SFQ_DEPTH*2 values */
+

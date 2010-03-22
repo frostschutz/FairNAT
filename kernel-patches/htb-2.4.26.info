@@ -1,0 +1,4 @@
+htb-2.4.26
+
+  This patch disables HTB Hysteries for latency reasons.
+  For more information, check out the HTB FAQ on www.docum.org

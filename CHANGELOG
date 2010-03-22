@@ -46,3 +46,6 @@
 ---- 2004-05-06 ---- v0.71 ---- Andreas Klauer ----
   Class numbers are now derived from user IP instead of array index.
   This makes reading tc statistics much easier.
+---- 2004-05-08 ---- v0.72 ---- Andreas Klauer ----
+  Added experimental support for IPP2P. If you use it, you can either
+  disable all P2P traffic in general or allow it with lowest priority.

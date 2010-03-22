@@ -68,3 +68,8 @@
 ---- 2004-05-13 ---- v0.75 ---- Andreas Klauer ----
   New hacks: HTB_MPU and HTB_OVERHEAD
   I label them hacks because these require a special patched tc binary.
+---- 2004-08-07 ---- v0.76 ---- Andreas Klauer ----
+  Mini-Update: Forgot to remove some debug stuff.
+---- 2004-10-22 ---- v0.77 ---- Andreas Klauer ----
+  Added USER_CEIL_UP and USER_CEIL_DOWN. You can use it to set all users
+  to a ceil rate lower than total available bandwidth.

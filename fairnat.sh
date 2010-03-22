@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      v0.76 (2004-08-07 14:26)
+# Version:      v0.77 (2004-10-22 19:54)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is available (for dialup users)
@@ -85,6 +85,8 @@ function configure
     PORTS=""
     CLASS_MODE="default"
     BORROW=1
+    CEIL_USER_UP=0
+    CEIL_USER_DOWN=0
 
 # Internet settings:
     DEV_NET=ppp0
@@ -140,6 +142,36 @@ function configure
     RATE_USER_DOWN=$(($RATE_DOWN/$NUM_USERS))
     RATE_USER_UP=$((((100-$RATE_LOCAL_PERCENT)*$RATE_UP)/($NUM_USERS*100)))
     RATE_LOCAL_UP=$(($RATE_LOCAL_PERCENT*$RATE_UP/100))
+
+# Calculate ceiling rate per user.
+    if [ $CEIL_USER_UP == 0 ];
+    then
+        CEIL_USER_UP=$RATE_UP;
+    else
+        CEIL_USER_UP=$((1024*$CEIL_USER_UP/8))
+    fi
+
+    if [ $CEIL_USER_DOWN == 0 ];
+    then
+        CEIL_USER_DOWN=$RATE_DOWN;
+    else
+        CEIL_USER_DOWN=$((1024*$CEIL_USER_DOWN/8))
+    fi
+
+# If the CEIL_USERs are lower than the RATE_USERs, lower the rates.
+# This is bad because the user class rates will not add up anymore.
+# If this happens the line will never be fully utilized by the users.
+    if [ $CEIL_USER_UP -lt $RATE_USER_UP ]
+    then
+        echo "Warning: Specified CEIL_USER_UP is lower than RATE_UP / Number of Users. Underfull link."
+        RATE_USER_UP=$CEIL_USER_UP;
+    fi
+
+    if [ $CEIL_USER_DOWN -lt $RATE_USER_DOWN ]
+    then
+        echo "Warning: Specified CEIL_USER_DOWN is lower than RATE_DOWN / Number of Users. Underfull link."
+        RATE_USER_DOWN=$CEIL_USER_DOWN;
+    fi
 
 # MARK offset:
 # Makes sure that class names per user are unique. Leave this value alone
@@ -334,7 +366,7 @@ function parent_class_default
     PC_DEV=$1
     PC_RATE=$2
     PC_USER_RATE=$3
-    PC_USER_CEIL=$4
+    PC_CEIL_USER=$4
     PC_LOCAL_RATE=$5
     PC_LOCAL_CEIL=$6
 
@@ -359,7 +391,7 @@ function parent_class_default
 
     # Parent class for user classes:
     $BIN_TC class add dev $PC_DEV parent 1:2 classid 1:1 \
-                  htb rate $(($PC_USER_RATE))bps ceil $(($PC_USER_CEIL))bps \
+                  htb rate $(($PC_USER_RATE))bps ceil $(($PC_CEIL_USER))bps \
                   quantum $DEV_NET_MTU $HTB_OPT
 }
 
@@ -694,8 +726,8 @@ function start_fairnat
 # Create classes for this user:
         if [ $BORROW == 1 ];
         then
-            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_UP
-            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_DOWN
+            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $CEIL_USER_UP
+            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $CEIL_USER_DOWN
         else
             user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_USER_UP
             user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_USER_DOWN
@@ -766,7 +798,7 @@ do
                 ;;
 
         version)
-                echo "Fair NAT v0.76 maintained by <Andreas.Klauer@metamorpher.de>."
+                echo "Fair NAT v0.77 maintained by <Andreas.Klauer@metamorpher.de>."
                 exit 0
                 ;;
 
@@ -794,7 +826,9 @@ do
                 echo "IP:               $DEV_NET_IP"
                 echo "RATE_SUB_PERCENT: $RATE_SUB_PERCENT"
                 echo "RATE_UP:          $RATE_UP ($RATE_USER_UP per user)"
+                echo "CEIL_USER_UP:     $CEIL_USER_UP"
                 echo "RATE_DOWN:        $RATE_DOWN ($RATE_USER_DOWN per user)"
+                echo "CEIL_USER_DOWN:   $CEIL_USER_DOWN"
                 echo "RATE_LOCAL_UP:    $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
                 echo "--- IPP2P ---"
                 echo "IPP2P_ENABLE:      $IPP2P_ENABLE"

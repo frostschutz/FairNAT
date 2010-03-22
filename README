@@ -1,0 +1,143 @@
+                       Traffic Shaping for Linux Routers
+
+  What's this?
+
+   This mini-page is the home of my linux router shaper script which
+   allows something like fair bandwidth sharing among clients in the
+   local network. The script is not great or anything, I just thought I'd
+   publish it because many people helped me write it and maybe someone
+   has some use for it. Sorry about the crappy design of this page, I
+   don't have time to put more effort in better looks.
+
+  Network
+
+   Here's a very basic ASCII-art which shows my network situation:
+                 +-----+
+    +--------+   |  S  |
+    | User A |---+  W  |
+    +--------+   |  I  |
+    +--------+   |  T  |     +--------+        +----------+
+    | User B |---+  C  +-----| Router |--------| Internet |
+    +--------+   |  H  |     +--------+        +----------+
+       ....     ... / ...
+    +--------+   |  H  |
+    | User N |---+  U  |
+    +--------+   |  B  |
+                 +-----+
+
+  Problem
+
+   You have a certain number of Clients (User A - User N) in your LAN
+   which are connected by a Switch (or a Hub or BNC) to the Linux Router
+   which is supposed to act as a gateway to the internet. The trouble now
+   is, User B has a lot of downloads running and User C uploads stuff day
+   and night, which leaves User A who only wants to use an interactive
+   SSH shell in the rain, since B and C already use up all bandwidth the
+   internet connection offers.
+
+  Solution
+
+   What we need to do is to share available bandwidth fairly among
+   clients. In order to achieve this, I first tried several searches at
+   Google and Freshmeat. This turned up quite a lot of results, like the
+   Linux Advanced Routing & Traffic Control HOWTO which is a must-read
+   and also contains great scripts, like the Wondershaper for single
+   users. Another great general purpose script I found was HTB.init,
+   which doesn't do anything by default, but gives you an easy way to
+   setup HTB queues. In case you prefer CBQ, there's a CBQ.init too. If
+   you don't know what I'm talking about, read the HOWTO above or
+   continue reading here.
+
+  Script
+
+   Since I never found a script that did exactly what I wanted, I decided
+   to write my own. It's designed to be an all-I-need script, therefore
+   it does not just setup Traffic Shaping, but Masquerading and Port
+   Forwarding too. In short, it does everything that has to do with
+   IPTables and Traffic Control. I use HTB (Hierarchical Token Bucket) to
+   share bandwidth among clients (one class per client). On top of that I
+   added a PRIO queue to prioritize interactive traffic on a per-user
+   basis. On top of PRIO I set SFQ to treat connections fairly.
+
+   This is the simplified class setup for per user I use:
+    HTB class (for bandwidth sharing)
+    |
+    \-- PRIO (for prioritizing interactive traffic)
+        |
+        \--- Interactive:  SFQ (to treat concurrenct connections fairly)
+        \--- Normal:       SFQ
+        \--- High-Traffic: SFQ
+
+  What you can and what you can't expect
+
+   Without traffic shaping, users with low-traffic, interactive
+   connections experience ping times between 2-5 seconds. This is of
+   course deadly for SSH connections. You can't work on remote machines
+   like that. With my script, I get much lower pings, at about 100-200ms.
+   Compared to the 2000-5000ms before, this is a huge improvement.
+   However, considering that the ping on a free line would be at around
+   50ms, the connection still feels laggy. It's nearly impossible to make
+   perferct interactive connections if the line is maxed out in both
+   directions.
+
+  Requirements
+
+   For this script, you need iptables, tc and a QoS-enabled kernel. All
+   these binaries must support HTB. It may be possible that you need a
+   patched version of tc for that. I also use several kernel patches: The
+   TTL patch, which allows me to modify the TTL value of packets. If you
+   don't want this, it has no effect on shaping whatsoever. Then I use
+   PSCHED_CPU instead of PSCHED_JIFFIES for scheduling. Just replace it
+   in pkt_sched.h. Check Stef Coene's docum page for details. It probably
+   will work without that, too. I also lowered the default SFQ queue
+   length from 100 to 16. Again, more information at Stef's page.
+
+  Configuration
+
+   Of course, in order to use my script, you first have to configure it.
+   As long as you are in the same network situation (see above) and have
+   the same requirements as I do (you tell me), this should be fairly
+   simple to do. You have to set these variables in the script's
+   configuration file (default: /etc/ppp/ipshape.config). You have to
+   edit the script itself if you want another location for the
+   configuration file.
+
+   Configuration of your LAN and Clients:
+     * DEV_LAN: Device of your LAN (default: eth1)
+     * USERS: Which clients are allowed to use the router (default: "2 5
+       6 23 183". If your router is in the 192.168.100 subnet, it will
+       expand to 192.168.100.2, 192.168.100.5, and so on)
+     * PORTS: Ports to be forwarded (default: "2 4000:6999 183
+       2000:3999", which means that ports 4000-6999 are forwarded to
+       client 192.168.100.2, whereas ports 2000-3999 are forwarded to
+       client 192.168.100.183)
+     * RATE_LAN: The speed of your local area network (default: 2Mbit)
+
+   Configuration of your Internet device:
+     * DEV_NET: Your internet device (default: ppp0)
+     * RATE_UP: Your upstream bandwidth (default: 128kbit (ADSL))
+     * RATE_DOWN: Your downstream bandwidth (default: 768kbit (ADSL))
+
+  Download
+
+   The script can be found here: fairnat-0.67
+
+   Please take the time to read the comments directly in the script, too.
+   I tried to add loads of comments in case you want to modify some parts
+   of the script. If you find bugs and/or improvements or have other
+   suggestions or questions, please contact me:
+   Andreas.Klauer@metamorpher.de
+
+  Credits
+
+   Thanks to all those people who helped me write this script. Special
+   thanks to the authors of the LARTC Howto and the people on the LARTC
+   mailing list. And of course to Stef Coene for his great page.
+
+  TODO
+
+     * Have a closer look at IPP2P in order to give filesharing
+       applications the lowest possible priority in general.
+     * Read mailing lists and kernel changelog in order to find hints for
+       new, better methods and improvements for this script.
+

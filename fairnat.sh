@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      0.70 (2004-05-05 22:11)
+# Version:      0.71 (2004-05-06 14:51)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is dialup and ready
@@ -91,35 +91,23 @@ function configure
 
 # Now comes the part that can't be configured by the user:
 
-# Get size of USERS and PORTS
-
-# TODO:  Isn't there a much easier, nicer way to get the count?
-    NUM_USERS=0
-# actual count is calculated here:
-    for x in $USERS;
-    do
-        NUM_USERS=$(($NUM_USERS+1));
-    done;
-
-# TODO:  Isn't there a much easier, nicer way to get the count?
-    NUM_PORTS=0
-# calculate count. required later.
-    for x in $PORTS;
-    do
-        NUM_PORTS=$(($NUM_PORTS+1))
-    done;
+# Get size of USERS and PORTS. Temporarily convert to Array to do this.
+    NUM_USERS=($USERS)
+    NUM_USERS=${#NUM_USERS[*]}
+    NUM_PORTS=($PORTS)
+    NUM_PORTS=${#NUM_PORTS[*]}
 
 # Get some additional stuff from the devices:
     DEV_LAN_IP=`$BIN_IFC $DEV_LAN | \
                 $BIN_GREP 'inet addr' | \
-                $BIN_SED -e s/.*addr://g -e s/\ .*//g`
+                $BIN_SED -e s/^.*inet\ addr://g -e s/\ .*$//g`
     DEV_LAN_SUBNET=`$BIN_ECHO $DEV_LAN_IP | $BIN_SED -e s/\.[0-9]*$//g`
     DEV_NET_IP=`$BIN_IFC $DEV_NET | \
                 $BIN_GREP 'inet addr:' | \
-                $BIN_SED -e s/.*inet\ addr://g -e s/\ .*//g`
+                $BIN_SED -e s/^.*inet\ addr://g -e s/\ .*$//g`
     DEV_NET_MTU=`$BIN_IFC $DEV_NET | \
                  $BIN_GREP 'MTU:' | \
-                 $BIN_SED -e s/.*MTU://g -e s/\ .*//g`
+                 $BIN_SED -e s/^.*MTU://g -e s/\ .*$//g`
 
 # Convert all rates from KBit to bps.
 # Also substract the percentage defined.
@@ -134,9 +122,12 @@ function configure
     RATE_USER_UP=$((((100-$RATE_LOCAL_PERCENT)*$RATE_UP)/$NUM_USERS))
     RATE_LOCAL_UP=$(($RATE_LOCAL_PERCENT*$RATE_UP/100))
 
-# MARK offset: Makes sure that class names per user are unique.
-#              If you use 10 or more sub-discs/classes per user,
-#              raise this value to 100.
+# MARK offset:
+# Makes sure that class names per user are unique. Leave this value alone
+# unless you really have to create 10 or more subclasses per user. Currently,
+# the script uses about 4. Since TC does not accept handles above 4 digits
+# and I'm too lazy to implement hexadecimal notation, using values >= 40 may
+# lead to weird error messages.
     MARK_OFFSET=10
 }
 
@@ -422,30 +413,33 @@ function start_fairnat
     $BIN_TC class add dev $DEV_NET parent 1: classid 1:1 htb \
                       rate $(($RATE_UP))bps ceil $(($RATE_UP))bps \
                       quantum $DEV_NET_MTU
+
 # Class for local upload. This class gets a lower prio.
     $BIN_TC class add dev $DEV_NET parent 1:1 classid 1:2 htb \
                       rate $(($RATE_LOCAL_UP))bps ceil $(($RATE_UP))bps \
-                      quantum $DEV_NET_MTU prio 1
+                      quantum $DEV_NET_MTU prio 3
 
 
 # Root QDisc and parent class for LAN device:
     $BIN_TC qdisc add dev $DEV_LAN root handle 1: htb default 3
+
 # We put a fat class on top here for local LAN traffic that does not
 # go to or come from the internet. This fat class gets two children:
 # one for the download traffic and one for the local LAN traffic.
     $BIN_TC class add dev $DEV_LAN parent 1: classid 1:2 htb \
                       rate $(($RATE_LAN))bps ceil $(($RATE_LAN))bps \
                       quantum $DEV_NET_MTU
+
 # The download class as a child of the fat class:
     $BIN_TC class add dev $DEV_LAN parent 1:2 classid 1:1 htb \
                       rate $(($RATE_DOWN))bps ceil $(($RATE_DOWN))bps \
                       quantum $DEV_NET_MTU
-# The local class as a child of the fat class with higher prio to boot:
+
+# The local class as a child of the fat class with lower prio to boot:
     $BIN_TC class add dev $DEV_LAN parent 1:2 classid 1:3 htb \
                       rate $(($RATE_LAN-$RATE_DOWN))bps \
                       ceil $(($RATE_LAN-$RATE_DOWN))bps \
-                      quantum $DEV_NET_MTU \
-                      prio 6
+                      quantum $DEV_NET_MTU prio 3
 
 # User classes will be created below.
 
@@ -460,8 +454,11 @@ function start_fairnat
     do
 # user = "1", "2", "3", "5:6:7", "8:9",
 
-# In every loop, add MARK_OFFSET to get unique MARK per user.
-        MARK=$(($MARK+$MARK_OFFSET));
+# Set MARK to $user*$MARK_OFFSET. For groups (5:6:7), use the first IP (5).
+# This makes it easier to create per-user statistics, since the class numbers
+# now resemble the User IPs. Thanks to Udo for this suggestion.
+        MARK=`$BIN_ECHO $user | $BIN_SED -e s/:.*//g`
+        MARK=$(($MARK*$MARK_OFFSET));
 
 # Create classes for this user:
         user_class $DEV_NET $MARK $RATE_USER_UP $RATE_UP
@@ -531,21 +528,21 @@ do
         info)
 # Give some information about our config.
                 echo "--- LAN ---"
-                echo "DEV:        $DEV_LAN"
-                echo "IP:         $DEV_LAN_IP"
-                echo "SUBNET:     $DEV_LAN_SUBNET"
-                echo "RATE:       $LAN_RATE"
-                echo "USERS:      $USERS"
-                echo "NUM_USERS:  $NUM_USERS"
-                echo "PORTS:      $PORTS"
-                echo "NUM_PORTS:  $NUM_PORTS"
+                echo "DEV:           $DEV_LAN"
+                echo "IP:            $DEV_LAN_IP"
+                echo "SUBNET:        $DEV_LAN_SUBNET"
+                echo "RATE:          $LAN_RATE"
+                echo "USERS:         $USERS"
+                echo "NUM_USERS:     $NUM_USERS"
+                echo "PORTS:         $PORTS"
+                echo "NUM_PORTS:     $NUM_PORTS"
                 echo "--- NET ---"
-                echo "DEV:        $DEV_NET"
-                echo "IP:         $DEV_NET_IP"
+                echo "DEV:           $DEV_NET"
+                echo "IP:            $DEV_NET_IP"
                 echo "RATE_SUB_PERCENT: $RATE_SUB_PERCENT"
-                echo "RATE_UP:    $RATE_UP ($RATE_USER_UP per user)"
-                echo "RATE_DOWN:  $RATE_DOWN ($RATE_USER_DOWN per user)"
-                echo "RATE_LOCAL: $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
+                echo "RATE_UP:       $RATE_UP ($RATE_USER_UP per user)"
+                echo "RATE_DOWN:     $RATE_DOWN ($RATE_USER_DOWN per user)"
+                echo "RATE_LOCAL_UP: $RATE_LOCAL_UP ($RATE_LOCAL_PERCENT%)"
                 exit 0
                 ;;
     esac

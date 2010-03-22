@@ -1,4 +1,4 @@
-#---- 2003-08-01 ---- Andreas Klauer ----
+---- 2003-08-01 ---- Andreas Klauer ----
   did some modifications based on Stef Coene's suggestions:
   corrected prio values, removed qdisc burst, normalized child rates,
   lowered total rate values, added quantums. Thanks, Stef!
@@ -43,3 +43,6 @@
   Added User grouping. Lets you treat multiple IPs as single user.
   New kernel-patch: htb removes HTB_HYSTERIES. May be good for pings on
   slow lines like mine.
+---- 2004-05-06 ---- v0.71 ---- Andreas Klauer ----
+  Class numbers are now derived from user IP instead of array index.
+  This makes reading tc statistics much easier.

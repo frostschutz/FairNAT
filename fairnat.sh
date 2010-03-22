@@ -1,11 +1,12 @@
-#!/bin/bash -x
+#!/bin/bash
+# Use !/bin/bash -x instead if you want to know what the script does.
 # -------------------------------------------------------------------------
 # File:         http://www.metamorpher.de/fairnat/
 # Author:       Andreas Klauer
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      0.68 (2004-05-03 15:34)
+# Version:      0.69 (2004-05-04 03:16)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is dialup and ready
@@ -20,41 +21,7 @@
 #               mailing lists. I don't remember your names in detail, but those
 #               scripts in general did give me some hints.
 #
-# Modified:
-# ---- 2003-08-01 ---- Andreas Klauer ----
-#   did some modifications based on Stef Coene's suggestions:
-#   corrected prio values, removed qdisc burst, normalized child rates,
-#   lowered total rate values, added quantums. Thanks, Stef!
-# ---- 2003-10-22 ---- Andreas Klauer ----
-#   new class structure, because the old one grew too big
-#   and having too many classes proved to perform really, really bad
-# ---- 2004-02-19 ---- Andreas Klauer ----
-#   replaced $BIN_BC/echo calculations with $((a*b/c)) syntax for readability
-#   added REAL_RATE_UP, REAL_RATE_DOWN for easier rate manipulation
-#   added sfq and tbf for prio qdisc classes
-# ---- 2004-04-30 ---- Andreas Klauer ----
-#   removed tbf since it didn't do anything useful anyway.
-#   straightened out sfq qdiscs.
-#   prioritizing ACK packets; modifying TOS; as shown by Stef Coene
-#   on www.docum.org (great page, thanks, actually I use loads of
-#   hints from there and got great results!)
-# ---- 2004-04-30 ---- Andreas Klauer ----
-#   Added ingress queue again
-#   Stupid me, forgot the 'bps' after rate values here and there.
-#   This messed everything up :-)
-# ---- 2004-05-01 ---- Andreas Klauer ----
-#   Added much more flexible user and port forwarding handling.
-#   The script now supports any number of users (as long as they
-#   are in the same subnet) and complex port forwarding rules.
-#       The downside to this is that the script looks more complicated
-#   now. I tried to compensate this effect by adding lots of hopefully
-#   helpful comments.
-# ---- 2004-05-03 ---- Andreas Klauer ----
-#   For better readability, moved all variables that are used for basic
-#   configuration into a separate file. Now people who don't want to
-#   change the script itself don't even need to take a look at it.
-# ---- 2004-05-03
-#
+# Modified:	See CHANGELOG
 
 # TODO:  Download traffic is only shaped for clients, not for the router.
 # TODO:: We somehow have to allow HTB shaping traffic of the router as if it

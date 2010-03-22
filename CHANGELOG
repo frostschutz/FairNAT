@@ -1,4 +1,4 @@
----- 2003-08-01 ---- Andreas Klauer ----
+#---- 2003-08-01 ---- Andreas Klauer ----
   did some modifications based on Stef Coene's suggestions:
   corrected prio values, removed qdisc burst, normalized child rates,
   lowered total rate values, added quantums. Thanks, Stef!
@@ -34,4 +34,6 @@
   Moved Change-Entries from the Script into a separate file CHANGELOG.
   Looks like there already was another project/script called ipshape.
   I renamed the script from ipshape to fairnat to avoid confusion.
-
+---- 2004-05-03 ---- v0.69 ---- Andreas Klauer ----
+  Nothing big, just a small bugfix and some typos.
+  Included some of the kernel patches I use.

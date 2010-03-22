@@ -1,0 +1,10 @@
+Kernel patches (not made by me) I use together with Fair NAT script.
+The script will work without them - but I recommend using them.
+Check Fair NAT documentation for details.
+
+If you're using newer 2.4 kernels and the patches do not work anymore,
+contact me. Since I'm using 2.4, I may have working ones for them.
+
+If you're using kernel 2.6, I'd happy to hear about wether Fair NAT
+works there or not in general. I have no patches for 2.6 at all,
+I don't even know if they're still required.

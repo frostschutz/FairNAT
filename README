@@ -1,4 +1,4 @@
-                       Traffic Shaping for Linux Routers
+                          Fair NAT for Linux Routers
 
   What's this?
 
@@ -77,7 +77,7 @@
    Compared to the 2000-5000ms before, this is a huge improvement.
    However, considering that the ping on a free line would be at around
    50ms, the connection still feels laggy. It's nearly impossible to make
-   perferct interactive connections if the line is maxed out in both
+   perfect interactive connections if the line is maxed out in both
    directions.
 
   Requirements
@@ -98,7 +98,7 @@
    As long as you are in the same network situation (see above) and have
    the same requirements as I do (you tell me), this should be fairly
    simple to do. You have to set these variables in the script's
-   configuration file (default: /etc/ppp/ipshape.config). You have to
+   configuration file (default: /etc/ppp/fairnat.config). You have to
    edit the script itself if you want another location for the
    configuration file.
 
@@ -120,7 +120,9 @@
 
   Download
 
-   The script can be found here: fairnat-0.67
+   The script can be found here:
+     * fairnat-0.69
+     * fairnat-0.68
 
    Please take the time to read the comments directly in the script, too.
    I tried to add loads of comments in case you want to modify some parts

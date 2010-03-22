@@ -76,3 +76,6 @@
 ---- 2004-11-15 ---- v0.78 ---- Andreas Klauer ----
   The IP address wasn't detected correctly for localized 'ifconfig's.
   Made the previously hardcoded TTL setting configurable.
+---- 2005-04-19 ---- v0.79 ---- Andreas Klauer ----
+  You can now specify rates other than kbit (Syntax like tc)
+  You can specify a ceil rate using <user>@<ceil_down>[|<ceil_up>].

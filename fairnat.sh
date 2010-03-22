@@ -6,7 +6,7 @@
 # Date:         2003-07-31
 # Contact:      Andreas.Klauer@metamorpher.de
 # Licence:      GPL
-# Version:      v0.78 (2004-11-15 21:47)
+# Version:      v0.79 (2005-04-19 18:44 CEST)
 # Description:  Traffic Shaping for multiple users on a dedicated linux router
 #               using a HTB queue. Please note that this script cannot be run
 #               before the internet connection is available (for dialup users)
@@ -44,6 +44,50 @@ LC_ALL=C
 LANG=C
 
 # === Functions: ===
+
+# -----------------------------------------------------------------------------
+# FUNCTION:    rate
+# DESCRIPTION:
+#   This function takes a rate argument (<number><unit>) and converts it
+#   to bps which is used internally for rate calculations. If no unit is
+#   specified, 'kbit' is assumed to be compatible with older versions of
+#   Fair NAT, where you could specify rates as kbit/s only.
+# SEE ALSO:
+# -----------------------------------------------------------------------------
+function rate
+{
+    RATE=0
+    R_RATE=$1
+    R_NUMBER=`$BIN_ECHO "$R_RATE" | $BIN_SED -e "s/[^0-9]//g"`
+    R_UNIT=`$BIN_ECHO "$R_RATE" | $BIN_SED -e "s/[0-9]//g"`
+
+    if [ "$R_UNIT" == "" ];
+    then
+        R_UNIT="kbit"
+    fi
+
+    # Let's see which unit we have...
+    if [ "$R_UNIT" == "kbps" ]
+    then
+        R_RATE=$(($R_NUMBER * 1024))
+    elif [ "$R_UNIT" == "mbps" ]
+    then
+        R_RATE=$(($R_NUMBER * 1024 * 1024))
+    elif [ "$R_UNIT" == "mbit" ]
+    then
+        R_RATE=$(($R_NUMBER * 1024 * 1024 / 8))
+    elif [ "$R_UNIT" == "kbit" ]
+    then
+        R_RATE=$(($R_NUMBER * 1024 / 8))
+    elif [ "$R_UNIT" == "bps" ]
+    then
+        R_RATE=$R_NUMBER
+    else
+        echo "Unknown unit '$R_UNIT'. I only know mbps, mbit, kbit, bps."
+    fi
+
+    RATE="$R_RATE"
+}
 
 # -----------------------------------------------------------------------------
 # FUNCTION:    configure
@@ -137,9 +181,14 @@ function configure
 
 # Convert all rates from KBit to bps.
 # Also substract the percentage defined.
-    RATE_UP=$((1024*$RATE_UP*(100-$RATE_SUB_PERCENT)/(8*100)))
-    RATE_DOWN=$((1024*$RATE_DOWN*(100-$RATE_SUB_PERCENT)/(8*100)))
-    RATE_LAN=$((1024*$RATE_LAN/8))
+    rate "$RATE_UP"
+    RATE_UP=$RATE
+    RATE_UP=$(($RATE_UP * (100-$RATE_SUB_PERCENT) / 100))
+    rate "$RATE_DOWN"
+    RATE_DOWN=$RATE
+    RATE_DOWN=$(($RATE_DOWN * (100-$RATE_SUB_PERCENT) / 100))
+    rate "$RATE_LAN"
+    RATE_LAN=$RATE
 
 # Rates per User / Local.
 # RATE_LOCAL_PERCENT of bandwidth reserved for local upload.
@@ -153,14 +202,16 @@ function configure
     then
         CEIL_USER_UP=$RATE_UP;
     else
-        CEIL_USER_UP=$((1024*$CEIL_USER_UP/8))
+        rate "$CEIL_USER_UP"
+        CEIL_USER_UP=$RATE
     fi
 
     if [ $CEIL_USER_DOWN == 0 ];
     then
         CEIL_USER_DOWN=$RATE_DOWN;
     else
-        CEIL_USER_DOWN=$((1024*$CEIL_USER_DOWN/8))
+        rate "$CEIL_USER_DOWN"
+        CEIL_USER_DOWN=$RATE
     fi
 
 # If the CEIL_USERs are lower than the RATE_USERs, lower the rates.
@@ -722,27 +773,53 @@ function start_fairnat
     MARK=0
     for user in $USERS;
     do
-# user = "1", "2", "3", "5:6:7", "8:9",
+# user = "1", "2", "3", "5:6:7", "8:9", "1@500kbit", "5:6:7@400kbit|80kbit"
 
 # Set MARK to $user*$MARK_OFFSET. For groups (5:6:7), use the first IP (5).
 # This makes it easier to create per-user statistics, since the class numbers
 # now resemble the User IPs. Thanks to Udo for this suggestion.
-        MARK=`$BIN_ECHO $user | $BIN_SED -e s/:.*//g`
+        MARK=`$BIN_ECHO $user | $BIN_SED -e "s/[^0-9].*//g"`
         MARK=$(($MARK*$MARK_OFFSET));
+
+# Check for custom ceil settings of this user
+        CUSTOM_USER_DOWN=$CEIL_USER_DOWN
+        CUSTOM_USER_UP=$CEIL_USER_UP
+        CUSTOM_TEST=`$BIN_ECHO $user | $BIN_SED -e "s/[^@]//g"`
+
+        if [ "$CUSTOM_TEST" != "" ];
+        then
+            # a custom rate is set, we need to evaluate this now...
+            CUSTOM_CHECK=`$BIN_ECHO $user | $BIN_SED -e "s/.*@//"`
+
+            CUSTOM_CHECK_DOWN=`$BIN_ECHO $CUSTOM_CHECK | $BIN_SED -e "s/|.*//"`
+            CUSTOM_CHECK_UP=`$BIN_ECHO $CUSTOM_CHECK | $BIN_SED -e "s/.*|//"`
+
+            if [ "$CUSTOM_CHECK_DOWN" != "" ];
+            then
+                rate $CUSTOM_CHECK_DOWN
+                CUSTOM_USER_DOWN=$RATE
+            fi
+
+            if [ "$CUSTOM_CHECK_UP" != "" ];
+            then
+                rate $CUSTOM_CHECK_UP
+                CUSTOM_USER_UP=$RATE
+            fi
+        fi
 
 # Create classes for this user:
         if [ $BORROW == 1 ];
         then
-            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $CEIL_USER_UP
-            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $CEIL_USER_DOWN
+            user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $CUSTOM_USER_UP
+            user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $CUSTOM_USER_DOWN
         else
             user_class_$CLASS_MODE $DEV_NET $MARK $RATE_USER_UP $RATE_USER_UP
             user_class_$CLASS_MODE $DEV_LAN $MARK $RATE_USER_DOWN $RATE_USER_DOWN
         fi
 
 # If a user has more than one IP, get the single IPs now.
-# This sed converts "5:6:7" to "5 6 7".
-        IP_LIST=`$BIN_ECHO $user | $BIN_SED -e s/:/\ /g`
+# This sed converts "5:6:7" to "5 6 7" and removes rate-addons (@) and other junk.
+        IP_LIST=`$BIN_ECHO $user | $BIN_SED -e "s/:/ /g" -e "s/[^0-9 ].*//"`
 
 # This can now be used in for loop:
         for ip in $IP_LIST;
@@ -805,7 +882,7 @@ do
                 ;;
 
         version)
-                echo "Fair NAT v0.78 maintained by <Andreas.Klauer@metamorpher.de>."
+                echo "Fair NAT v0.79 maintained by <Andreas.Klauer@metamorpher.de>."
                 exit 0
                 ;;
 

@@ -37,3 +37,9 @@
 ---- 2004-05-03 ---- v0.69 ---- Andreas Klauer ----
   Nothing big, just a small bugfix and some typos.
   Included some of the kernel patches I use.
+---- 2004-05-05 ---- v0.70 ---- Andreas Klauer ----
+  Restructured the whole script. I use subroutines now. Means less C&P.
+  Added command line arguments stop, info and <file>.
+  Added User grouping. Lets you treat multiple IPs as single user.
+  New kernel-patch: htb removes HTB_HYSTERIES. May be good for pings on
+  slow lines like mine.

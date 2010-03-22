@@ -1,0 +1,11 @@
+--- kernel-source-2.4.18/include/net/sch_htb.c      Wed May  5 22:40:33 2004
++++ kernel-source-2.4.18-htb/include/net/sch_htb.c   Wed May  5 12:02:40 2004
+@@ -74,7 +74,7 @@
+ #define HTB_EWMAC 2    /* rate average over HTB_EWMAC*HTB_HSIZE sec */
+ #define HTB_DEBUG 1    /* compile debugging support (activated by tc tool) */
+ #define HTB_RATECM 1    /* whether to use rate computer */
+-#define HTB_HYSTERESIS 1/* whether to use mode hysteresis for speedup */
++#define HTB_HYSTERESIS 0/* whether to use mode hysteresis for speedup */
+ #define HTB_QLOCK(S) spin_lock_bh(&(S)->dev->queue_lock)
+ #define HTB_QUNLOCK(S) spin_unlock_bh(&(S)->dev->queue_lock)
+ #define HTB_VER 0x30010        /* major must be matched with number suplied by TC as version */
